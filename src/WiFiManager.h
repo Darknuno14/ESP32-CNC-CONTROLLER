@@ -1,9 +1,12 @@
 #pragma once
 #include <WiFi.h>
-
 class WiFiManager {
 public:
-    static void init(const char* ssid, const char* password);
+    WiFiManager() = default;
+    bool init();
+    bool connect(const char* ssid, const char* password);
+    
+    String getLocalIP();
 private:
-    static void waitForConnection();
+    void waitForConnection();
 };

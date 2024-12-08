@@ -5,13 +5,10 @@
 
 class WebServerManager {
 public:
-    static AsyncWebServer server;
-    static void init();
-    static void begin();
-    static AsyncWebServer* getServer();
-    static AsyncEventSource* getEvents();
-
+    WebServerManager();
+    ~WebServerManager();
+    bool init();
+    bool begin();
 private:
-    static AsyncEventSource* events;
-    static void setupRoutes();
+    void setupRoutes();
 };
