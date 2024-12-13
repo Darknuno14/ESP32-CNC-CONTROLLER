@@ -10,5 +10,7 @@ public:
     bool init();
     bool begin();
 private:
+    AsyncWebServer* server;
+    AsyncEventSource* events{nullptr}; 
     void setupRoutes();
 };

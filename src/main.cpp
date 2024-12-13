@@ -11,38 +11,29 @@ WiFiManager wifiManager;
 WebServerManager webServer;
 
 void setup() {
-    // Initialize serial communication
+    // Start serial communication at 115200 baud rate
     Serial.begin(115200);
-    delay(1000); // Delay to allow time for serial monitor to connect
-    
-    // Initialize managers using instance methods
-    if (!fsManager.init()) {
-        Serial.println("ERROR: Failed to mount filesystem");
-        return;
-    } else {
-        Serial.println("STATUS: Filesystem mounted successfully");
+    delay(1000); // Wait for serial monitor connection
+
+    // Mount the LittleFS filesystem
+    if(fsManager.init()) {
+        Serial.println("LittleFS initialized successfully");
     }
     
-    if (!wifiManager.connect(WIFI_SSID, WIFI_PASSWORD)) {
-        Serial.println("ERROR: Failed to connect to WiFi");
-        return;
-    } else {
-        Serial.println("STATUS: Successfully connected to WiFi. IP Address: " + wifiManager.getLocalIP());
+    // Connect to WiFi using credentials from credentials.h
+    if(wifiManager.connect(WIFI_SSID, WIFI_PASSWORD)) {
+        Serial.println("WiFi connected successfully");
     }
     
-    if (!webServer.init()) {
-        Serial.println("ERROR: Failed to initialize web server");
-        return;
-    } else {
-        Serial.println("STATUS: Web server initialized successfully");
+    // Set up web server routes and handlers
+    if (webServer.init()) {
+        Serial.println("Web server initialized successfully");
     }
 
-    if(!webServer.begin()) {
-        Serial.println("ERROR: Failed to start web server");
-        return;
-    } else {
-        Serial.println("STATUS: Web server started successfully");
-    } 
+    // Start the web server on configured port
+    if (webServer.begin()) {
+        Serial.println("Web server started successfully");
+    }
 }
 
 void loop() {

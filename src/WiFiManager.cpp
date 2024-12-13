@@ -5,18 +5,29 @@ bool WiFiManager::init() {
     return true;
 }
 
-bool WiFiManager::connect(const char* ssid, const char* password) {
+bool WiFiManager::connect(const char* ssid, const char* password, unsigned long timeout) {
     WiFi.begin(ssid, password);
-    waitForConnection();
-    return true;
+    Serial.print("Connecting to WiFi");
+    if (waitForConnection(timeout)) {
+        Serial.println("Connected");
+        Serial.print("IP address: ");
+        Serial.println(WiFi.localIP());
+        return true;
+    } else {
+        Serial.println("Connection failed");
+        return false;
+    }
 }
 
-void WiFiManager::waitForConnection() {
-    while (WiFi.status() != WL_CONNECTED) {
-        Serial.println('.');
+bool WiFiManager::waitForConnection(unsigned long timeout) {
+   unsigned long startTime = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout) {
+        Serial.print(".");
         delay(500);
     }
-} 
+    Serial.println();
+    return WiFi.status() == WL_CONNECTED;
+}
 
 String WiFiManager::getLocalIP() {
     return WiFi.localIP().toString();

@@ -4,9 +4,8 @@ class WiFiManager {
 public:
     WiFiManager() = default;
     bool init();
-    bool connect(const char* ssid, const char* password);
-    
+    bool connect(const char* ssid, const char* password, unsigned long timeout = 10000);    
     String getLocalIP();
 private:
-    void waitForConnection();
+    bool waitForConnection(unsigned long timeout);
 };
