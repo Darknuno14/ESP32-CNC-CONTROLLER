@@ -4,11 +4,13 @@
 #include "WiFiManager.h"
 #include "FSManager.h"
 #include "WebServerManager.h"
+#include "SDManager.h"
 
 // Create manager instances
 FSManager* fsManager{nullptr};
 WiFiManager* wifiManager{nullptr};
 WebServerManager* webServerManager{nullptr};
+SDCardManager* sdManager{nullptr};
 
 void task1(void * parameter) {
     // Log task start on core 0
@@ -35,20 +37,35 @@ void task1(void * parameter) {
         Serial.println("STATUS: Web server started");
     }
 
+    // Initialize SD card manager
+    sdManager = new SDCardManager();
+    switch (sdManager->init()) {
+    case SDCardError::OK:
+      Serial.println("STATUS: SD card initialized");
+      break;
+    case SDCardError::INIT_FAILED:
+      Serial.println("ERROR: SD card initialization failed");
+      break;
+    case SDCardError::DIRECTORY_CREATE_FAILED:
+      Serial.println("ERROR: Projects directory creation failed");
+      break;
+    default:
+      Serial.println("ERROR: Unknown error during initialization");
+  }
+
     // Main task loop
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(10)); // Add delay to prevent watchdog timeouts
-        //  WORK IN PROGRESS
     }
 }
+
 
 
 void task2(void * parameter) {
     // Log task start on core 1
     Serial.println("STATUS: Program task started on core 1");
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(10)); // Add delay to prevent watchdog timeouts
-        // WORK IN PROGRESS
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -56,6 +73,7 @@ void task2(void * parameter) {
 void setup() {
     Serial.begin(115200);
     delay(1000);
+    SPI.begin(SD_CLK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
 
     xTaskCreatePinnedToCore(task1, "HandleTask", 8192, NULL, 1, NULL, 0);
     xTaskCreatePinnedToCore(task2, "ProgramTask", 8192, NULL, 1, NULL, 1);
@@ -79,5 +97,9 @@ void loop() {
 //     if(webServerManager){
 //         delete webServerManager;
 //         webServerManager = nullptr;
+//     }
+//     if(sdManager){
+//         delete sdManager;
+//         sdManager = nullptr;
 //     }
 // }
