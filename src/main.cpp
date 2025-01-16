@@ -69,19 +69,21 @@ void task1(void * parameter) {
 
 
 void task2(void * parameter) {
-    // Log task start on core 1
-    Serial.println("STATUS: Program task started on core 1");
+    Serial.println("STATUS: Handle task started on core 1");
+
     while (true) {
-        if (allInitialized){
-        sdManager->listProjectFiles(); // Wywołujemy funkcję listującą pliki na karcie SD
-        Serial.println("STATUS: Listing files on SD card");
-        std::vector<std::string> pliki = sdManager->getProjectFiles(); // Pobieramy wektor plików z karty SD
-        for (const auto& plik : pliki) { // Iterujemy po wektorze i wyświetlamy każdy element
-                Serial.println(plik.c_str()); // Konwersja std::string na const char* dla Serial.println
+        Serial.println("STATUS: CORE 1");
+        if(allInitialized) {
+            sdManager->listProjectFiles(); // Wywołujemy funkcję listującą pliki na karcie SD
+            Serial.println("STATUS: Listing files on SD card");
+            std::vector<std::string> pliki = sdManager->getProjectFiles(); // Pobieramy wektor plików z karty SD
+
+            for (int i = 0; i < pliki.size(); i++) {
+                Serial.println(pliki[i].c_str());
             }
- 
+
+            vTaskDelay(pdMS_TO_TICKS(1000));
     }
-           vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 

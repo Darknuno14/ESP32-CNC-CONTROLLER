@@ -12,6 +12,7 @@ private:
     AsyncEventSource* events{nullptr};
     SDCardManager* sdManager;
     void setupRoutes();
+   
 public:
     WebServerManager(SDCardManager* sdManager);
     ~WebServerManager();

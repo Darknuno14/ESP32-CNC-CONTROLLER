@@ -97,8 +97,41 @@ void WebServerManager::setupRoutes() {
         request->send(200, "application/json", json);
     });
 
+    server->on("/api/upload", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        request->send(200, "text/plain", "Upload complete");
+    },
+    [this](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+        static File uploadFile;
+        if (!index) {
+            // Construct full path with leading slash
+            String filePath = sdManager->projectsDirectory;
+            if (!filePath.startsWith("/")) filePath = "/" + filePath;
+            if (!filePath.endsWith("/")) filePath += "/";
+            filePath += filename;
+
+            // Debug
+            Serial.println("Saving file to: " + filePath);
+
+            uploadFile = SD.open(filePath, FILE_WRITE);
+            if (!uploadFile) {
+                Serial.println("Failed to open file for writing");
+                request->send(500, "text/plain", "Failed to open file");
+                return;
+            }
+        }
+        if (uploadFile) {
+            if (len) uploadFile.write(data, len);
+            if (final) {
+                uploadFile.close();
+                Serial.println("File upload complete");
+            }
+        }
+    });
+
     // Handle requests to non-existent endpoints with 404 response
     server->onNotFound([](AsyncWebServerRequest *request) {
         request->send(404);
     });
+
 }
