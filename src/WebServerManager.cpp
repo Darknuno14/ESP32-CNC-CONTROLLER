@@ -1,8 +1,7 @@
 #include "WebServerManager.h"
-#include "FSManager.h"
-#include <LittleFS.h>
 
-WebServerManager::WebServerManager() : server(nullptr), events{nullptr} {} ;
+
+WebServerManager::WebServerManager(SDCardManager* sdManager) : sdManager(sdManager), server(nullptr), events(nullptr) {}
 
 WebServerManager::~WebServerManager() {
     // Check if events is allocated and delete it
@@ -82,6 +81,20 @@ void WebServerManager::setupRoutes() {
     server->on("/api/button", HTTP_POST, [](AsyncWebServerRequest *request) {
         Serial.println("STATUS: Button has been pressed");
         request->send(200, "text/plain", "OK");
+    });
+
+    // Add endpoint to get SD card file list
+    server->on("/api/sd-files", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        const std::vector<std::string>& files = this->sdManager->getProjectFiles();
+
+        String json = "[";
+        for (size_t i{0}; i < files.size(); ++i) {
+            if (i > 0) json += ",";
+            json += "\"" + String(files[i].c_str()) + "\"";
+        }
+        json += "]";
+
+        request->send(200, "application/json", json);
     });
 
     // Handle requests to non-existent endpoints with 404 response

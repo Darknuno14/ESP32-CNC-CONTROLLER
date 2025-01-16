@@ -2,15 +2,19 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
+#include "FSManager.h"
+#include "SDManager.h"
+#include <LittleFS.h>
 
 class WebServerManager {
+private:
+    AsyncWebServer* server;
+    AsyncEventSource* events{nullptr};
+    SDCardManager* sdManager;
+    void setupRoutes();
 public:
-    WebServerManager();
+    WebServerManager(SDCardManager* sdManager);
     ~WebServerManager();
     bool init();
     bool begin();
-private:
-    AsyncWebServer* server;
-    AsyncEventSource* events{nullptr}; 
-    void setupRoutes();
 };

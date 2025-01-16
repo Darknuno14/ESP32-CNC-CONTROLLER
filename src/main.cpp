@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <vector>
+#include <string>
 
 #include "credentials.h"
 #include "WiFiManager.h"
@@ -12,6 +14,9 @@ WiFiManager* wifiManager{nullptr};
 WebServerManager* webServerManager{nullptr};
 SDCardManager* sdManager{nullptr};
 
+// TEMP
+bool allInitialized = false;
+
 void task1(void * parameter) {
     // Log task start on core 0
     Serial.println("STATUS: Handle task started on core 0");
@@ -20,21 +25,6 @@ void task1(void * parameter) {
     fsManager = new FSManager();
     if (fsManager->init()) {
         Serial.println("STATUS: Filesystem initialized");
-    }
-
-    // Initialize WiFi connection
-    wifiManager = new WiFiManager();
-    if (wifiManager->connect(WIFI_SSID, WIFI_PASSWORD)) {
-        Serial.println("STATUS: WiFi connected");
-    }
-
-    // Initialize and start web server
-    webServerManager = new WebServerManager();
-    if (webServerManager->init()) {
-        Serial.println("STATUS: Web server initialized");
-    }
-    if (webServerManager->begin()) {
-        Serial.println("STATUS: Web server started");
     }
 
     // Initialize SD card manager
@@ -51,7 +41,24 @@ void task1(void * parameter) {
       break;
     default:
       Serial.println("ERROR: Unknown error during initialization");
-  }
+    }
+
+    // Initialize WiFi connection
+    wifiManager = new WiFiManager();
+    if (wifiManager->connect(WIFI_SSID, WIFI_PASSWORD)) {
+        Serial.println("STATUS: WiFi connected");
+    }
+
+    // Initialize and start web server
+    webServerManager = new WebServerManager(sdManager);
+    if (webServerManager->init()) {
+        Serial.println("STATUS: Web server initialized");
+    }
+    if (webServerManager->begin()) {
+        Serial.println("STATUS: Web server started");
+    }
+
+    allInitialized = true;
 
     // Main task loop
     while (true) {
@@ -65,7 +72,16 @@ void task2(void * parameter) {
     // Log task start on core 1
     Serial.println("STATUS: Program task started on core 1");
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(10));
+        if (allInitialized){
+        sdManager->listProjectFiles(); // Wywołujemy funkcję listującą pliki na karcie SD
+        Serial.println("STATUS: Listing files on SD card");
+        std::vector<std::string> pliki = sdManager->getProjectFiles(); // Pobieramy wektor plików z karty SD
+        for (const auto& plik : pliki) { // Iterujemy po wektorze i wyświetlamy każdy element
+                Serial.println(plik.c_str()); // Konwersja std::string na const char* dla Serial.println
+            }
+ 
+    }
+           vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 

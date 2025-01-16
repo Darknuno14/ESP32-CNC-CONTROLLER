@@ -21,7 +21,7 @@ enum class SDCardError {
 class SDCardManager {
 private:
     bool cardInitialized{false};
-    const char*  projectsDirectory{"Projects"};
+    const char*  projectsDirectory{"/Projects"};
 
     bool createProjectsDirectory();
     std::vector<std::string> projectFiles; // Według gemini String z Arduino może powodować fragmentację pamięci. Unikanie String z Arduino: Klasa String z Arduino alokuje pamięć dynamicznie, co w dłuższym okresie może prowadzić do fragmentacji pamięci i niestabilności systemu. 
