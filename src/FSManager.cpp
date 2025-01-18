@@ -1,12 +1,14 @@
 #include "FSManager.h"
 
-bool FSManager::init() {
-    // Try to mount the LittleFS filesystem with format_if_failed=true
-    if (!LittleFS.begin(true)) {
-        // Print error message if mounting fails
-        Serial.print("ERROR: Failed to mount LittleFS");
-        return false;
+
+FSManagerError FSManager::init() {
+    // Attempt to mount LittleFS
+    // The 'false' parameter disables automatic formatting if mounting fails
+    if (!LittleFS.begin(false)) {
+        // If mounting fails, log error and return false
+        return FSManagerError::MOUNT_FAILED;
     }
-    // Return true if filesystem mounted successfully
-    return true;
+    
+    // Filesystem mounted successfully
+    return FSManagerError::OK;
 }

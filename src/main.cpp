@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Arduino.h>
 #include <vector>
 #include <string>
@@ -15,24 +17,33 @@
 #include "WebServerManager.h"
 #include "SDManager.h"
 
-// Create manager instances
-FSManager* fsManager{nullptr};
-WiFiManager* wifiManager{nullptr};
-SDCardManager* sdManager{nullptr};
-WebServerManager* webServerManager{nullptr};
+// ============================================================================
+// Global Variables:
 
-// TEMP
-bool allInitialized = false;
+SDCardManager* sdManager{nullptr};  // Create manager instances - Used in both tasks
 
+bool allInitialized = false; // TEMP
+
+
+// Task 1: Handle filesystem, WiFi, and web server
 void task1(void * parameter) {
     // Log task start on core 0
     Serial.printf("STATUS: Task1 started on core %d\n", xPortGetCoreID());
-
+    FSManager* fsManager{nullptr};
+    WiFiManager* wifiManager{nullptr};
+    WebServerManager* webServerManager{nullptr};
 
     // Initialize filesystem manager
-    fsManager = new FSManager();
-    if (fsManager->init()) {
+    switch(fsManager->init()) {
+    case FSManagerError::OK:
         Serial.println("STATUS: Filesystem initialized");
+        break;
+    case FSManagerError::MOUNT_FAILED:
+        Serial.println("ERROR: Filesystem mount failed");
+        break;
+    default:
+        Serial.println("ERROR: Unknown error during initialization");
+        break;
     }
 
     // Initialize SD card manager
@@ -59,12 +70,36 @@ void task1(void * parameter) {
 
     // Initialize and start web server
     webServerManager = new WebServerManager(sdManager);
-    if (webServerManager->init()) {
+    switch(webServerManager->init()) {
+    case WebServerError::OK:
         Serial.println("STATUS: Web server initialized");
+        break;
+    case WebServerError::ALREADY_INITIALIZED:
+        Serial.println("ERROR: Web server already initialized");
+        break;
+    case WebServerError::SERVER_ALLOCATION_FAILED:
+        Serial.println("ERROR: Web server allocation failed");
+        break;
+    case WebServerError::EVENT_SOURCE_FAILED:
+        Serial.println("ERROR: Event source failed");
+        break;
+    default:
+        Serial.println("ERROR: Unknown error during initialization");
+        break;
     }
-    if (webServerManager->begin()) {
+
+    switch (webServerManager->begin())
+   {
+   case WebServerError::OK:
         Serial.println("STATUS: Web server started");
-    }
+        break;
+    case WebServerError::ALREADY_INITIALIZED:
+        Serial.println("ERROR: Web server already started");
+        break;   
+   default:
+        Serial.println("ERROR: Unknown error during initialization");
+        break;
+   }
 
     // TEMP
     allInitialized = true;
@@ -75,8 +110,8 @@ void task1(void * parameter) {
     }
 }
  
-
-
+// ============================================================================
+// Task 2: Program task
 void task2(void * parameter) {
     // Log task start on core 0
     Serial.printf("STATUS: Task2 started on core %d\n", xPortGetCoreID());
@@ -87,7 +122,8 @@ void task2(void * parameter) {
     }
 }
 
-
+// ============================================================================
+// Setup function:
 void setup() {
     Serial.begin(115200);
     delay(1000);
@@ -97,6 +133,8 @@ void setup() {
     xTaskCreatePinnedToCore(task2, "ProgramTask", 8192, NULL, 1, NULL, 1);
 }
 
+// ============================================================================
+// Loop function:
 void loop() {
     // Serial.printf("Current core: %d\n", xPortGetCoreID());
     // Empty loop
