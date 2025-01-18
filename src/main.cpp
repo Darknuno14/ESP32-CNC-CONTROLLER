@@ -1,8 +1,15 @@
 #include <Arduino.h>
 #include <vector>
 #include <string>
+#include <LittleFS.h>
+#include <SPI.h>
+#include <SD.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
 
+#include "CONFIGURATION.h"
 #include "credentials.h"
+
 #include "WiFiManager.h"
 #include "FSManager.h"
 #include "WebServerManager.h"
@@ -11,15 +18,16 @@
 // Create manager instances
 FSManager* fsManager{nullptr};
 WiFiManager* wifiManager{nullptr};
-WebServerManager* webServerManager{nullptr};
 SDCardManager* sdManager{nullptr};
+WebServerManager* webServerManager{nullptr};
 
 // TEMP
 bool allInitialized = false;
 
 void task1(void * parameter) {
     // Log task start on core 0
-    Serial.println("STATUS: Handle task started on core 0");
+    Serial.printf("STATUS: Task1 started on core %d\n", xPortGetCoreID());
+
 
     // Initialize filesystem manager
     fsManager = new FSManager();
@@ -58,6 +66,7 @@ void task1(void * parameter) {
         Serial.println("STATUS: Web server started");
     }
 
+    // TEMP
     allInitialized = true;
 
     // Main task loop
@@ -65,25 +74,16 @@ void task1(void * parameter) {
         vTaskDelay(pdMS_TO_TICKS(10)); // Add delay to prevent watchdog timeouts
     }
 }
-
+ 
 
 
 void task2(void * parameter) {
-    Serial.println("STATUS: Handle task started on core 1");
+    // Log task start on core 0
+    Serial.printf("STATUS: Task2 started on core %d\n", xPortGetCoreID());
 
+    // Main task loop
     while (true) {
-        Serial.println("STATUS: CORE 1");
-        if(allInitialized) {
-            sdManager->listProjectFiles(); // Wywołujemy funkcję listującą pliki na karcie SD
-            Serial.println("STATUS: Listing files on SD card");
-            std::vector<std::string> pliki = sdManager->getProjectFiles(); // Pobieramy wektor plików z karty SD
-
-            for (int i = 0; i < pliki.size(); i++) {
-                Serial.println(pliki[i].c_str());
-            }
-
-            vTaskDelay(pdMS_TO_TICKS(1000));
-    }
+        vTaskDelay(pdMS_TO_TICKS(10)); // Add delay to prevent watchdog timeouts
     }
 }
 
@@ -98,6 +98,7 @@ void setup() {
 }
 
 void loop() {
+    // Serial.printf("Current core: %d\n", xPortGetCoreID());
     // Empty loop
 }
 

@@ -99,3 +99,60 @@ function updateFileList(files) {
     fileListElement.appendChild(li);
   });
 }
+
+function submitFileSelection() {
+  const radios = document.getElementsByName('selectedFile');
+  let selectedFilename = null;
+  
+  for (let i = 0; i < radios.length; i++) {
+      if (radios[i].checked) {
+          selectedFilename = radios[i].value;
+          break;
+      }
+  }
+  
+  if (!selectedFilename) {
+      alert('Please select a file first.');
+      return;
+  }
+
+  // Send to server and update <p id="selected-file">
+  fetch('/api/select-file?file=' + encodeURIComponent(selectedFilename), {
+      method: 'POST'
+  })
+  .then(response => response.text())
+  .then(data => {
+      console.log('File selected:', data);
+      document.getElementById('selected-file').textContent = `Selected file: ${selectedFilename}`;
+  })
+  .catch(error => {
+      console.error('Selection error:', error);
+      document.getElementById('selected-file').textContent = 'Error selecting file';
+  });
+}
+
+function refreshFileList() {
+    // First trigger manual refresh on ESP32
+    fetch('/api/refresh-files', { 
+        method: 'POST' 
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to refresh files on ESP32');
+        }
+        // Then get the updated file list
+        return fetch('/api/sd-files');
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to get file list');
+        }
+        return response.json();
+    })
+    .then(data => {
+        updateFileList(data);
+    })
+    .catch(error => {
+        alert('Failed to refresh file list: ' + error.message);
+    });
+}
