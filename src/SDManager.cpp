@@ -12,6 +12,7 @@ SDCardError SDCardManager::init() {
         }
     }
 
+    sdMutex = xSemaphoreCreateMutex();
     cardInitialized = true;
     return SDCardError::OK;
 }
@@ -57,4 +58,28 @@ SDCardError SDCardManager::listProjectFiles() {
 std::vector<std::string> SDCardManager::getProjectFiles() const
 {
     return projectFiles;
+}
+
+bool SDCardManager::takeSD(){
+    return xSemaphoreTake(sdMutex, portMAX_DELAY) == pdTRUE;
+}
+void SDCardManager::giveSD(){
+    xSemaphoreGive(sdMutex);
+}
+
+
+bool SDCardManager::isProjectSelected(){
+    return ProjectSelected;
+}
+String SDCardManager::getSelectedProject(){
+    return selectedProjectName;
+}
+void SDCardManager::setSelectedProject(String filename) {
+    selectedProjectName = filename;
+    ProjectSelected = true;
+}
+
+void SDCardManager::clearSelectedProject(){
+    selectedProjectName = "";
+    ProjectSelected = false;
 }

@@ -1,5 +1,8 @@
 #include "WebServerManager.h"
 
+// Define global variables
+extern volatile bool webServerStart;
+extern volatile bool webServerStop;
 
 WebServerManager::WebServerManager(SDCardManager* sdManager) : sdManager(sdManager), server(nullptr), events(nullptr) {}
 
@@ -186,6 +189,68 @@ void WebServerManager::setupRoutes() {
         request->send(200, "text/plain", "Files refreshed");
     });
 
+    // Add endpoint for file selection
+    server->on("/api/select-file", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        #ifdef DEBUG_SERVER_ROUTES
+            Serial.println("DEBUG SERVER STATUS: File selection requested");
+        #endif
+
+        if (!request->hasParam("file")) {
+            #ifdef DEBUG_SERVER_ROUTES
+                Serial.println("DEBUG SERVER ERROR: File parameter missing");
+            #endif
+            request->send(400, "text/plain", "File parameter missing");
+            return;
+        }
+
+        String filename = request->getParam("file")->value();
+        #ifdef DEBUG_SERVER_ROUTES
+            Serial.printf("DEBUG SERVER STATUS: Selected file: %s\n", filename.c_str());
+        #endif
+
+        sdManager->setSelectedProject(filename);
+        request->send(200, "text/plain", "File selected: " + filename);
+    });
+
+    // Update START endpoint
+    server->on("/api/start", HTTP_POST, [this](AsyncWebServerRequest *request) {
+
+        startUserCommand = !startUserCommand;
+        stopUserCommand = false;
+ 
+        #ifdef DEBUG_SERVER_ROUTES
+            Serial.println("DEBUG SERVER STATUS: Start button pressed, commandStart= " + String(startUserCommand));
+        #endif
+
+        request->send(200, "text/plain", "Processing started");
+    });
+
+    // Update STOP endpoint
+    server->on("/api/stop", HTTP_POST, [this](AsyncWebServerRequest *request) {
+
+        startUserCommand = false;
+        stopUserCommand = !stopUserCommand;
+
+        #ifdef DEBUG_SERVER_ROUTES
+            Serial.println("DEBUG SERVER STATUS: Stop button pressed, commandStop = " + String(stopUserCommand));
+        #endif
+ 
+        request->send(200, "text/plain", "Processing started");
+    });
+
+    // Add endpoint for reading file content
+    server->on("/api/sd-files/^.*", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        String filename = request->url().substring(11); // Remove "/api/sd-files/"
+        String filePath = sdManager->projectsDirectory + "/" + filename;
+        
+        if (!SD.exists(filePath)) {
+            request->send(404, "text/plain", "File not found");
+            return;
+        }
+
+        request->send(SD, filePath, "text/plain");
+    });
+
     // Handle requests to non-existent endpoints with 404 response
     server->onNotFound([](AsyncWebServerRequest *request) {
         #ifdef DEBUG_SERVER_ROUTES
@@ -199,11 +264,15 @@ void WebServerManager::setupRoutes() {
 bool WebServerManager::isServerStarted() {
     return serverStarted;
 }
-
 bool WebServerManager::isEventsInitialized() {
     return eventsInitialized;
 }
-
 bool WebServerManager::isServerInitialized() {
     return serverInitialized;
+}
+bool WebServerManager::getStartCommand() {
+    return startUserCommand;
+}   
+bool WebServerManager::getStopCommand() {
+    return stopUserCommand;
 }

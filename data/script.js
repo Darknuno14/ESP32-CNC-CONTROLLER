@@ -101,34 +101,34 @@ function updateFileList(files) {
 }
 
 function submitFileSelection() {
-  const radios = document.getElementsByName('selectedFile');
-  let selectedFilename = null;
-  
-  for (let i = 0; i < radios.length; i++) {
-      if (radios[i].checked) {
-          selectedFilename = radios[i].value;
-          break;
-      }
-  }
-  
-  if (!selectedFilename) {
-      alert('Please select a file first.');
-      return;
-  }
+    const radios = document.getElementsByName('selectedFile');
+    let selectedFilename = null;
+    
+    for (let i = 0; i < radios.length; i++) {
+        if (radios[i].checked) {
+            selectedFilename = radios[i].value;
+            break;
+        }
+    }
+    
+    if (!selectedFilename) {
+        alert('Please select a file first.');
+        return;
+    }
 
-  // Send to server and update <p id="selected-file">
-  fetch('/api/select-file?file=' + encodeURIComponent(selectedFilename), {
-      method: 'POST'
-  })
-  .then(response => response.text())
-  .then(data => {
-      console.log('File selected:', data);
-      document.getElementById('selected-file').textContent = `Selected file: ${selectedFilename}`;
-  })
-  .catch(error => {
-      console.error('Selection error:', error);
-      document.getElementById('selected-file').textContent = 'Error selecting file';
-  });
+    // Fix: Send filename directly in URL-encoded form
+    fetch('/api/select-file?file=' + encodeURIComponent(selectedFilename), {
+        method: 'POST'
+    })
+    .then(response => response.text())
+    .then(data => {
+        console.log('File selected:', data);
+        document.getElementById('selected-file').textContent = `Selected file: ${selectedFilename}`;
+    })
+    .catch(error => {
+        console.error('Selection error:', error);
+        document.getElementById('selected-file').textContent = 'Error selecting file';
+    });
 }
 
 function refreshFileList() {
@@ -155,4 +155,120 @@ function refreshFileList() {
     .catch(error => {
         alert('Failed to refresh file list: ' + error.message);
     });
+}
+
+function visualizeSelectedGCode() {
+    const radios = document.getElementsByName('selectedFile');
+    let selectedFilename = null;
+
+    for (let i = 0; i < radios.length; i++) {
+        if (radios[i].checked) {
+            selectedFilename = radios[i].value;
+            break;
+        }
+    }
+
+    if (!selectedFilename) {
+        alert('Please select a file first.');
+        return;
+    }
+
+    // Fix: Use correct endpoint format
+    fetch('/api/preview?file=' + encodeURIComponent(selectedFilename))
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch file');
+            return response.text();
+        })
+        .then(gcode => visualizeGCode(gcode))
+        .catch(error => {
+            console.error('Error fetching G-Code file:', error);
+            alert('Failed to fetch G-Code file: ' + error.message);
+        });
+}
+
+function visualizeGCode(gcode) {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const gcodeLines = gcode.split('\n');
+
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Set up drawing parameters
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1;
+
+  // Initialize coordinates
+  let currentX = 0;
+  let currentY = 0;
+  let firstMove = true;
+
+  // Find min/max coordinates for scaling
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const points = [];
+
+  // First pass to collect all points
+  gcodeLines.forEach(line => {
+    line = line.trim().toUpperCase();
+    if (line.startsWith('G0') || line.startsWith('G1')) {
+      const xMatch = line.match(/X([\d\.]+)/);
+      const yMatch = line.match(/Y([\d\.]+)/);
+
+      const x = xMatch ? parseFloat(xMatch[1]) : currentX;
+      const y = yMatch ? parseFloat(yMatch[1]) : currentY;
+
+      points.push({ x, y });
+
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+
+      currentX = x;
+      currentY = y;
+    }
+  });
+
+  // Calculate scaling factors
+  const canvasWidth = canvas.width - 20;
+  const canvasHeight = canvas.height - 20;
+  const contentWidth = maxX - minX;
+  const contentHeight = maxY - minY;
+
+  const scaleX = contentWidth ? canvasWidth / contentWidth : 1;
+  const scaleY = contentHeight ? canvasHeight / contentHeight : 1;
+  const scale = Math.min(scaleX, scaleY);
+
+  // Calculate offset to center the drawing
+  const offsetX = (canvas.width - (contentWidth * scale)) / 2 - minX * scale;
+  const offsetY = (canvas.height - (contentHeight * scale)) / 2 - minY * scale;
+
+  // Second pass to draw
+  ctx.beginPath();
+  points.forEach(point => {
+    const x = point.x * scale + offsetX;
+    const y = canvas.height - (point.y * scale + offsetY); // Flip Y axis
+
+    if (firstMove) {
+      ctx.moveTo(x, y);
+      firstMove = false;
+    } else {
+      ctx.lineTo(x, y);
+    }
+  });
+  ctx.stroke();
+}
+
+function startProcessing() {
+    fetch('/api/start', { method: 'POST' })
+        .then(response => response.text())
+        .then(data => console.log('Processing started:', data))
+        .catch(error => console.error('Start error:', error));
+}
+
+function stopProcessing() {
+    fetch('/api/stop', { method: 'POST' })
+        .then(response => response.text())
+        .then(data => console.log('Processing stopped:', data))
+        .catch(error => console.error('Stop error:', error));
 }

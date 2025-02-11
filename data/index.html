@@ -21,7 +21,11 @@
     <ul id="file-list"></ul>
 
     <p id="selected-file">No file selected</p>
-    <button type="button" class="btn btn-secondary mb-3" onclick="submitFileSelection()">Submit Selection</button>
+    <div class="btn-group mb-3">
+        <button type="button" class="btn btn-primary" onclick="submitFileSelection()">Submit Selection</button>
+        <button type="button" class="btn btn-success" onclick="startProcessing()">START</button>
+        <button type="button" class="btn btn-danger" onclick="stopProcessing()">STOP</button>
+    </div>
 
     <h2>Upload G-Code File</h2>
     <form id="uploadForm" enctype="multipart/form-data">
@@ -34,6 +38,10 @@
         <button type="submit" class="btn btn-secondary">Upload</button>
         <div id="upload-message"></div>
     </form>
+
+    <h2>G-Code Viewer</h2>
+    <button id="visualizeBtn" class="btn btn-secondary mb-3" onclick="visualizeSelectedGCode()">Preview</button>
+    <canvas id="canvas" width="800" height="600" style="border: 1px solid #ccc;"></canvas>
 
     <button onclick="sendButtonPress()">Press Me</button>
 

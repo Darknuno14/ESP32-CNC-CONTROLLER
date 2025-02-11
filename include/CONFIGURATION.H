@@ -13,6 +13,7 @@ constexpr int SD_MISO_PIN = 19;    // Master In Slave Out
 
 // ============================================================================
 // Enable debugging:
+#define DEBUG_CNC
 #define DEBUG_SERVER_ROUTES
 #define DEBUG_SD
 #define DEBUG_WIFI

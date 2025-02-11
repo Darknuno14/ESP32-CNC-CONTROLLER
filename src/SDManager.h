@@ -36,14 +36,16 @@ enum class SDCardError {
 class SDCardManager {
 private:
     bool cardInitialized{false}; // Flag to track card initialization status
-    /**
-     * @brief Create the Projects directory on the SD card
-     * 
-     * @return true if directory creation was successful
-     * @return false if directory creation failed
-     */
+
     bool createProjectsDirectory(); 
-    std::vector<std::string> projectFiles; // Vector to store project files // Według gemini String z Arduino może powodować fragmentację pamięci. Unikanie String z Arduino: Klasa String z Arduino alokuje pamięć dynamicznie, co w dłuższym okresie może prowadzić do fragmentacji pamięci i niestabilności systemu. 
+    std::vector<std::string> projectFiles;  // Vector to store project files 
+                                            // Według gemini String z Arduino może powodować fragmentację pamięci. Unikanie String z Arduino: Klasa String z Arduino alokuje pamięć dynamicznie, co w dłuższym okresie może prowadzić do fragmentacji pamięci i niestabilności systemu. 
+    
+    bool ProjectSelected{false};
+    String selectedProjectName{};
+
+    SemaphoreHandle_t sdMutex{};
+
 public:
     /**
      * @brief Construct a new SD Card Manager
@@ -77,5 +79,13 @@ public:
      * @return std::vector<std::string> 
      */
     std::vector<std::string> getProjectFiles() const;
-};
 
+    bool takeSD();
+    void giveSD();
+
+    bool isProjectSelected();
+
+    String getSelectedProject();
+    void setSelectedProject(String filename);
+    void clearSelectedProject();
+};

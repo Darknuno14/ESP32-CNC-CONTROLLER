@@ -44,6 +44,8 @@ private:
      * Called internally during initialization.
     */
     void setupRoutes();
+    bool startUserCommand{false};
+    bool stopUserCommand{false};
    
 public:
     /**
@@ -94,4 +96,8 @@ public:
      * @return false if the events have not been initialized
      */
     bool isEventsInitialized();
+
+    bool getStartCommand();
+    bool getStopCommand();
+
 };
