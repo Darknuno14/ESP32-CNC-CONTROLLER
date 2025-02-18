@@ -1,47 +1,59 @@
 #include "SDManager.h"
+#include "CONFIGURATION.H"
 
+#include <SD.h>
+#include <Arduino.h>
 
-SDCardError SDCardManager::init() {
-    if (!SD.begin(SD_CS_PIN)) {
-        return SDCardError::INIT_FAILED;
+SDMenagerStatus SDCardManager::init() {
+    if (!SD.begin(CONFIG::SD_CS_PIN)) {
+        return SDMenagerStatus::INIT_FAILED;
     }
 
-    if (!SD.exists(projectsDirectory)) {
+    if (!SD.exists(CONFIG::PROJECTS_DIR)) {
         if (!createProjectsDirectory()) {
-            return SDCardError::DIRECTORY_CREATE_FAILED;
+            return SDMenagerStatus::DIRECTORY_CREATE_FAILED;
         }
     }
 
-    sdMutex = xSemaphoreCreateMutex();
-    cardInitialized = true;
-    return SDCardError::OK;
-}
-
-bool SDCardManager::createProjectsDirectory(){
-    if (SD.mkdir(projectsDirectory)) {
-        return true;
-    } else {
-        return false;
+    this->sdMutex = xSemaphoreCreateMutex();
+    if (this->sdMutex == nullptr) {
+        return SDMenagerStatus::MUTEX_CREATE_FAILED;
     }
+    
+    this->cardInitialized = true;
+    return SDMenagerStatus::OK;
 }
 
-bool SDCardManager::isCardInitialized(){
+bool SDCardManager::createProjectsDirectory() {
+    std::string path = CONFIG::PROJECTS_DIR;
+    if (!path.empty() && path.back() == '/') {
+        path.pop_back();
+    }
+    return SD.mkdir(path.c_str());
+}
+
+bool SDCardManager::isCardInitialized() const {
       return cardInitialized;
 }
 
-SDCardError SDCardManager::listProjectFiles() {
-    if (!cardInitialized) {
-        return SDCardError::CARD_NOT_INITIALIZED;
+SDMenagerStatus SDCardManager::listProjectFiles() {
+    if (!this->isCardInitialized()) {
+        return SDMenagerStatus::CARD_NOT_INITIALIZED;
     }
 
-    File dir = SD.open(projectsDirectory);
-    if (!dir) {
-        return SDCardError::DIRECTORY_OPEN_FAILED;
+    std::string path = CONFIG::PROJECTS_DIR;
+    if (!path.empty() && path.back() == '/') {
+        path.pop_back();
     }
 
-    projectFiles.clear();
+    File dir = SD.open(path.c_str());
+    if (!dir || !dir.isDirectory()) {
+        return SDMenagerStatus::DIRECTORY_OPEN_FAILED;
+    }
 
-    File entry = dir.openNextFile();
+    this->projectFiles.clear();
+
+    File entry {dir.openNextFile()};
     while (entry) {
         if (!entry.isDirectory()) {
             projectFiles.push_back(entry.name());
@@ -52,34 +64,40 @@ SDCardError SDCardManager::listProjectFiles() {
 
     dir.close();
 
-    return SDCardError::OK;
+    return SDMenagerStatus::OK;
 }
 
-std::vector<std::string> SDCardManager::getProjectFiles() const
-{
+std::vector<std::string> SDCardManager::getProjectFiles() const {
     return projectFiles;
 }
 
-bool SDCardManager::takeSD(){
-    return xSemaphoreTake(sdMutex, portMAX_DELAY) == pdTRUE;
-}
-void SDCardManager::giveSD(){
-    xSemaphoreGive(sdMutex);
-}
-
-
-bool SDCardManager::isProjectSelected(){
-    return ProjectSelected;
-}
-String SDCardManager::getSelectedProject(){
-    return selectedProjectName;
-}
-void SDCardManager::setSelectedProject(String filename) {
-    selectedProjectName = filename;
-    ProjectSelected = true;
+bool SDCardManager::takeSD() {
+    if (this->sdMutex != nullptr) {
+        return xSemaphoreTake(this->sdMutex, portMAX_DELAY) == pdTRUE;
+    }
+    return false;
 }
 
-void SDCardManager::clearSelectedProject(){
-    selectedProjectName = "";
-    ProjectSelected = false;
+void SDCardManager::giveSD() {
+    if (this->sdMutex != nullptr) {
+        xSemaphoreGive(this->sdMutex);
+    }
+}
+
+bool SDCardManager::isProjectSelected() const {
+    return this->projectIsSelected;
+}
+
+const std::string& SDCardManager::getSelectedProject() {
+    return this->selectedProject;
+}
+
+void SDCardManager::setSelectedProject(const std::string& filename) {
+    this->selectedProject = filename;
+    this->projectIsSelected = true;
+}
+
+void SDCardManager::clearSelectedProject() {
+    this->selectedProject = "";
+    this->projectIsSelected = false;
 }

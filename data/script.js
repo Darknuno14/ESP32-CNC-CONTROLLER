@@ -1,3 +1,45 @@
+// Add these functions at the top of the file
+
+function updateSDStatus() {
+    fetch('/api/sd-status')
+        .then(response => response.json())
+        .then(data => {
+            const statusElement = document.getElementById('sd-status');
+            statusElement.style.backgroundColor = data.initialized ? '#28a745' : '#dc3545';
+        })
+        .catch(error => console.error('Error fetching SD status:', error));
+}
+
+function reinitializeSD() {
+    // Show loading state
+    const button = document.querySelector('button[onclick="reinitializeSD()"]');
+    const originalText = button.textContent;
+    button.textContent = 'Reinitializing...';
+    button.disabled = true;
+
+    fetch('/api/reinitialize-sd', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('SD card reinitialized successfully');
+                refreshFileList();
+                updateSDStatus();
+            } else {
+                console.error('Failed to reinitialize SD card');
+                alert('Failed to reinitialize SD card. Please check the hardware connection.');
+            }
+        })
+        .catch(error => {
+            console.error('Error reinitializing SD:', error);
+            alert('Error reinitializing SD card');
+        })
+        .finally(() => {
+            // Restore button state
+            button.textContent = originalText;
+            button.disabled = false;
+        });
+}
+
 function sendButtonPress() {
     fetch('/api/button', {
       method: 'POST',
@@ -272,3 +314,8 @@ function stopProcessing() {
         .then(data => console.log('Processing stopped:', data))
         .catch(error => console.error('Stop error:', error));
 }
+
+// Add this to periodically check SD status
+setInterval(updateSDStatus, 5000);
+// Call it once when page loads
+document.addEventListener('DOMContentLoaded', updateSDStatus);

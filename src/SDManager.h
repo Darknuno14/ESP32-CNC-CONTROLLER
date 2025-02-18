@@ -1,91 +1,76 @@
 #pragma once
-
-#include <Arduino.h>
-#include <SPI.h>
-#include <SD.h>
 #include <vector>
 #include <string>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
-#include "CONFIGURATION.h"
-
-/**
- * @brief Enumeration of possible SD card error states
- * 
- * Used to track and handle various error conditions that may occur
- * during SD card initialization and operation.
- */
-enum class SDCardError {
+enum class SDMenagerStatus {
     OK,
     INIT_FAILED,
     DIRECTORY_CREATE_FAILED,
     DIRECTORY_OPEN_FAILED,
+    MUTEX_CREATE_FAILED,
     FILE_OPEN_FAILED,
     CARD_NOT_INITIALIZED,
     UNKNOWN_ERROR  
 };
 
-/**
- * @brief SD Card Manager for ESP32 CNC Controller
- * 
- * Manages the SD card filesystem, handling:
- * - Card initialization and status
- * - Project file listing
- * - File operations
- * 
- */
+ // Manages the SD card, which acts as a storage medium for project files and parameters.
+ // Provides a mutex for synchronizing access to the card.
 class SDCardManager {
 private:
-    bool cardInitialized{false}; // Flag to track card initialization status
+    // Track card initialization status
+    bool cardInitialized{false};
 
+    // Create the Projects directory on the SD card
+    // true = directory creation was successful
     bool createProjectsDirectory(); 
-    std::vector<std::string> projectFiles;  // Vector to store project files 
-                                            // Według gemini String z Arduino może powodować fragmentację pamięci. Unikanie String z Arduino: Klasa String z Arduino alokuje pamięć dynamicznie, co w dłuższym okresie może prowadzić do fragmentacji pamięci i niestabilności systemu. 
-    
-    bool ProjectSelected{false};
-    String selectedProjectName{};
 
+    // Store project files names
+    std::vector<std::string> projectFiles;  
+
+    // Mutex for SD card access
     SemaphoreHandle_t sdMutex{};
 
+    // Track if a project is selected
+    bool projectIsSelected{false};
+    
+    // Store the selected project filename 
+    std::string selectedProject{};
+
 public:
-    /**
-     * @brief Construct a new SD Card Manager
-     * 
-     */
+
+    // Default constructor for SDCardManager
     SDCardManager() = default;
 
-    String projectsDirectory{"/Projects"};
-    /**
-     * @brief Initialize the SD card
-     * 
-     * @return SDCardError 
-     */
-    SDCardError init();
-    /**
-     * @brief Check if the SD card is initialized
-     * 
-     * @return true if the card is initialized
-     * @return false if the card is not initialized
-     */
-    bool isCardInitialized();
-    /**
-     * @brief Update the project files vector
-     * 
-     * @return SDCardError 
-     */
-    SDCardError listProjectFiles();
-    /**
-     * @brief Get the Project Files vector
-     * 
-     * @return std::vector<std::string> 
-     */
+    // Initialize the SD card
+    SDMenagerStatus init();
+
+    // Check if the SD card is initialized
+    bool isCardInitialized() const;
+
+    //Update the project files vector
+    SDMenagerStatus listProjectFiles();
+    
+    //Get the Project Files vector
     std::vector<std::string> getProjectFiles() const;
 
+    // Take the SD card for exclusive access
     bool takeSD();
+
+    // Give the SD card back for other tasks to use
     void giveSD();
 
-    bool isProjectSelected();
+    // Check if a project is selected
+    bool isProjectSelected() const;
 
-    String getSelectedProject();
-    void setSelectedProject(String filename);
+    // Get the selected project filename
+    const std::string& getSelectedProject();
+
+    // Set the selected project filename
+    void setSelectedProject(const std::string& filename);
+
+    // Clear the selected project filename
     void clearSelectedProject();
 };
+

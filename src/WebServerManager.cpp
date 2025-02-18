@@ -1,62 +1,62 @@
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <SD.h>
+#include <LittleFS.h>
 #include "WebServerManager.h"
-
-// Define global variables
-extern volatile bool webServerStart;
-extern volatile bool webServerStop;
+#include "CONFIGURATION.H"
 
 WebServerManager::WebServerManager(SDCardManager* sdManager) : sdManager(sdManager), server(nullptr), events(nullptr) {}
 
 WebServerManager::~WebServerManager() {
-    // Check if events is allocated and delete it
+    // Delete event source if allocated
     if (events) {
         eventsInitialized = false;
         delete events;
-        events = nullptr; // Set events to nullptr after deletion
+        events = nullptr;
     }
 
-    // Check if server is allocated and delete it
+    // Delete server if allocated
     if (server) {
         serverInitialized = false;
         serverStarted = false;
         delete server;
-        server = nullptr; // Set server to nullptr after deletion
+        server = nullptr; 
     }
 }
 
-WebServerError WebServerManager::init() {
-    // Check if the server is already initialized
+WebServerStatus WebServerManager::init() {
+    // If already initialized, return already initialized status
     if (server != nullptr) {
-        return WebServerError::ALREADY_INITIALIZED;
+        return WebServerStatus::ALREADY_INITIALIZED;
     }
 
     // Allocate memory for the web server
     server = new AsyncWebServer(80);
     if (server == nullptr) {
-        return WebServerError::SERVER_ALLOCATION_FAILED;
-    } else {
-        serverInitialized = true;
+        return WebServerStatus::SERVER_ALLOCATION_FAILED;
     }
+    this->serverInitialized = true;
 
     // Allocate memory for the event source if not already done
     if (!events) {
         events = new AsyncEventSource("/events");
         if (events == nullptr) { 
-            // Clean up allocated server memory
             delete server;
             server = nullptr;
-            return WebServerError::EVENT_SOURCE_FAILED;
-        } else {
-            eventsInitialized = true;
-        }
+            return WebServerStatus::EVENT_SOURCE_FAILED;
+        } 
+        this->eventsInitialized = true;
     }
 
-    return WebServerError::OK;
+    return WebServerStatus::OK;
 }
 
-WebServerError WebServerManager::begin() {
+WebServerStatus WebServerManager::begin() {
     // Check if the server is initialized
     if (server == nullptr) {
-        return WebServerError::ALREADY_INITIALIZED;
+        return WebServerStatus::ALREADY_INITIALIZED;
     }
 
     // Setup the routes for the web server
@@ -70,9 +70,9 @@ WebServerError WebServerManager::begin() {
 
     // Start the web server
     server->begin();
-    serverStarted = true;
+    this->serverStarted = true;
 
-    return WebServerError::OK;
+    return WebServerStatus::OK;
 }
 
 void WebServerManager::setupRoutes() {
@@ -95,13 +95,15 @@ void WebServerManager::setupRoutes() {
         request->send(200, "text/plain", "OK");
     });
 
-    // Add endpoint to get SD card file list
+    // End
     server->on("/api/sd-files", HTTP_GET, [this](AsyncWebServerRequest *request) {
         #ifdef DEBUG_SERVER_ROUTES
             Serial.println("DEBUG SERVER STATUS: File list requested");
             
             if (!this->sdManager) {
-                Serial.println("DEBUG SERVER ERROR: SD Manager not initialized");
+                #ifdef DEBUG_SERVER_ROUTES
+                    Serial.println("DEBUG SERVER ERROR: SD Manager not initialized");
+                #endif
                 request->send(500, "text/plain", "SD Manager not initialized");
                 return;
             }
@@ -122,52 +124,49 @@ void WebServerManager::setupRoutes() {
         request->send(200, "application/json", json);
     });
 
+    // File upload endpoint
     server->on("/api/upload", HTTP_POST,
-    [](AsyncWebServerRequest *request) {
-        #ifdef DEBUG_SERVER_ROUTES
-            Serial.println("DEBUG SERVER STATUS: Upload complete");
-        #endif
-        request->send(200, "text/plain", "Upload complete");
-    },
-    [this](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
-        static File uploadFile;
-        if (!index) {
-            // Construct full path with leading slash
-            String filePath = sdManager->projectsDirectory;
-            if (!filePath.startsWith("/")) filePath = "/" + filePath;
-            if (!filePath.endsWith("/")) filePath += "/";
-            filePath += filename;
-
+        [](AsyncWebServerRequest *request) {
             #ifdef DEBUG_SERVER_ROUTES
-                Serial.println("DEBUG SERVER STATUS: Starting upload of " + filename);
-                Serial.println("DEBUG SERVER STATUS: Saving to " + filePath);
+                Serial.println("DEBUG SERVER STATUS: Upload complete");
             #endif
+            request->send(200, "text/plain", "Upload complete");
+        },
+        [this](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+            static File uploadFile;
+            if (index == 0) {
+                // Build full file path (ensure leading slash if required)
+                std::string filePath = CONFIG::PROJECTS_DIR + std::string(filename.c_str());
+                #ifdef DEBUG_SERVER_ROUTES
+                    Serial.println("DEBUG SERVER STATUS: Starting upload of " + String(filename.c_str()));
+                    Serial.println("DEBUG SERVER STATUS: Saving to " + String(filePath.c_str()));
+                #endif
+                uploadFile = SD.open(filePath.c_str(), FILE_WRITE);
+                if (!uploadFile) {
+                    #ifdef DEBUG_SERVER_ROUTES
+                        Serial.println("DEBUG SERVER ERROR: Failed to open file for writing");
+                    #endif
+                    request->send(500, "text/plain", "Failed to open file");
+                    return;
+                }
+            }
+            if (uploadFile) {
+                if (len > 0) {
+                    uploadFile.write(data, len);
+                    #ifdef DEBUG_SERVER_ROUTES
+                        Serial.printf("DEBUG SERVER STATUS: Written %d bytes\n", len);
+                    #endif
+                }
+                if (final) {
+                    uploadFile.close();
+                    #ifdef DEBUG_SERVER_ROUTES
+                        Serial.println("DEBUG SERVER STATUS: File upload complete");
+                    #endif
+                }
+            }
+        });
 
-            uploadFile = SD.open(filePath, FILE_WRITE);
-            if (!uploadFile) {
-                #ifdef DEBUG_SERVER_ROUTES
-                    Serial.println("DEBUG Failed to open file for writing");
-                #endif
-                request->send(500, "text/plain", "Failed to open file");
-                return;
-            }
-        }
-        if (uploadFile) {
-            if (len) {
-                uploadFile.write(data, len);
-                #ifdef DEBUG_SERVER_ROUTES
-                    Serial.printf("DEBUG SERVER STATUS: Written %d bytes\n", len);
-                #endif
-            }
-            if (final) {
-                uploadFile.close();
-                #ifdef DEBUG_SERVER_ROUTES
-                    Serial.println("DEBUG File upload complete");
-                #endif
-            }
-        }
-    });
-
+    // Endpoint to refresh file list
     server->on("/api/refresh-files", HTTP_POST, [this](AsyncWebServerRequest *request) {
         #ifdef DEBUG_SERVER_ROUTES
             Serial.println("DEBUG SERVER STATUS: File list refresh requested");
@@ -189,12 +188,12 @@ void WebServerManager::setupRoutes() {
         request->send(200, "text/plain", "Files refreshed");
     });
 
-    // Add endpoint for file selection
+    // Endpoint to select a file
+    // Endpoint for selecting a file
     server->on("/api/select-file", HTTP_POST, [this](AsyncWebServerRequest *request) {
         #ifdef DEBUG_SERVER_ROUTES
             Serial.println("DEBUG SERVER STATUS: File selection requested");
         #endif
-
         if (!request->hasParam("file")) {
             #ifdef DEBUG_SERVER_ROUTES
                 Serial.println("DEBUG SERVER ERROR: File parameter missing");
@@ -202,21 +201,19 @@ void WebServerManager::setupRoutes() {
             request->send(400, "text/plain", "File parameter missing");
             return;
         }
-
-        String filename = request->getParam("file")->value();
+        std::string filename {request->getParam("file")->value().c_str()};
         #ifdef DEBUG_SERVER_ROUTES
             Serial.printf("DEBUG SERVER STATUS: Selected file: %s\n", filename.c_str());
         #endif
-
         sdManager->setSelectedProject(filename);
-        request->send(200, "text/plain", "File selected: " + filename);
+        request->send(200, "text/plain", "File selected: " + String(filename.c_str()));
     });
 
-    // Update START endpoint
+    // Endpoint to update the START command
     server->on("/api/start", HTTP_POST, [this](AsyncWebServerRequest *request) {
 
-        startUserCommand = !startUserCommand;
-        stopUserCommand = false;
+        this->startUserCommand = !startUserCommand;
+        this->stopUserCommand = false;
  
         #ifdef DEBUG_SERVER_ROUTES
             Serial.println("DEBUG SERVER STATUS: Start button pressed, commandStart= " + String(startUserCommand));
@@ -228,8 +225,8 @@ void WebServerManager::setupRoutes() {
     // Update STOP endpoint
     server->on("/api/stop", HTTP_POST, [this](AsyncWebServerRequest *request) {
 
-        startUserCommand = false;
-        stopUserCommand = !stopUserCommand;
+        this->startUserCommand = false;
+        this->stopUserCommand = !stopUserCommand;
 
         #ifdef DEBUG_SERVER_ROUTES
             Serial.println("DEBUG SERVER STATUS: Stop button pressed, commandStop = " + String(stopUserCommand));
@@ -240,16 +237,47 @@ void WebServerManager::setupRoutes() {
 
     // Add endpoint for reading file content
     server->on("/api/sd-files/^.*", HTTP_GET, [this](AsyncWebServerRequest *request) {
-        String filename = request->url().substring(11); // Remove "/api/sd-files/"
-        String filePath = sdManager->projectsDirectory + "/" + filename;
-        
-        if (!SD.exists(filePath)) {
+        std::string filename {request->url().substring(14).c_str()}; // Correct offset: remove "/api/sd-files/"
+        std::string filePath {CONFIG::PROJECTS_DIR + filename};
+    
+        if (!SD.exists(filePath.c_str())) {
             request->send(404, "text/plain", "File not found");
             return;
         }
-
-        request->send(SD, filePath, "text/plain");
+    
+        // Let the AsyncWebServer handle opening, reading, and closing the file.
+        request->send(SD, filePath.c_str(), "text/plain");
     });
+
+    server->on("/api/sd-status", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        String json = "{\"initialized\":" + String(this->sdManager->isCardInitialized() ? "true" : "false") + "}";
+        request->send(200, "application/json", json);
+    });
+        
+        // Endpoint to reinitialize the SD card
+        server->on("/api/reinitialize-sd", HTTP_POST, [this](AsyncWebServerRequest *request) {
+            #ifdef DEBUG_SERVER_ROUTES
+                Serial.println("DEBUG SERVER STATUS: SD card reinitialization requested");
+            #endif
+    
+            SDMenagerStatus result = this->sdManager->init();
+            bool success = (result == SDMenagerStatus::OK);
+            
+            if (success) {
+                #ifdef DEBUG_SERVER_ROUTES
+                    Serial.println("DEBUG SERVER STATUS: SD card reinitialization successful");
+                #endif
+                // Only refresh file list if initialization was successful
+                this->sdManager->listProjectFiles();
+            } else {
+                #ifdef DEBUG_SERVER_ROUTES
+                    Serial.println("DEBUG SERVER STATUS: SD card reinitialization failed");
+                #endif
+            }
+    
+            String json = "{\"success\":" + String(success ? "true" : "false") + "}";
+            request->send(200, "application/json", json);
+        });
 
     // Handle requests to non-existent endpoints with 404 response
     server->onNotFound([](AsyncWebServerRequest *request) {

@@ -1,34 +1,40 @@
 #include "WiFiManager.h"
+#include <WiFi.h>
 
-bool WiFiManager::init() {
-    WiFi.mode(WIFI_STA);
-    return true;
+WiFiManagerStatus WiFiManager::init() {
+    // Set the WiFi mode to station (client) mode.
+    if (!WiFi.mode(WIFI_STA)) {
+        return WiFiManagerStatus::STA_MODE_FAILED;
+    }
+    return WiFiManagerStatus::OK;
 }
 
-bool WiFiManager::connect(const char* ssid, const char* password, unsigned long timeout) {
+WiFiManagerStatus WiFiManager::connect(const char* ssid, const char* password, unsigned long timeout) {
     WiFi.begin(ssid, password);
     Serial.print("Connecting to WiFi");
     if (waitForConnection(timeout)) {
-        Serial.println("Connected");
-        Serial.print("IP address: ");
+        Serial.println("Connected to WiFi, IP address:");
         Serial.println(WiFi.localIP());
-        return true;
+        return WiFiManagerStatus::OK;
     } else {
         Serial.println("Connection failed");
-        return false;
+        return WiFiManagerStatus::OK;
     }
 }
 
 bool WiFiManager::waitForConnection(unsigned long timeout) {
    unsigned long startTime = millis();
+    unsigned long printTime = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout) {
-        Serial.print(".");
-        delay(500);
+        if (millis() - printTime >= 500) {
+            Serial.print(".");
+            printTime = millis();
+        }
     }
     Serial.println();
     return WiFi.status() == WL_CONNECTED;
 }
 
-String WiFiManager::getLocalIP() {
-    return WiFi.localIP().toString();
+std::string WiFiManager::getLocalIP() {
+    return WiFi.localIP().toString().c_str();
 }

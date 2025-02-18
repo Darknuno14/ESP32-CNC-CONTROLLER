@@ -1,103 +1,73 @@
 #pragma once
-#include <Arduino.h>
-#include <ESPAsyncWebServer.h>
+
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <AsyncTCP.h>
-#include "FSManager.h"
+#include <ESPAsyncWebServer.h>
 #include "SDManager.h"
-#include <LittleFS.h>
 
-#include "CONFIGURATION.h"
-
-/**
- * @brief Enumeration of possible WebServer error states
- * 
- * Used to track and handle various error conditions that may occur
- * during WebServer initialization and operation.
- */
-enum class WebServerError {
+enum class WebServerStatus{
     OK,
     ALREADY_INITIALIZED,
     SERVER_ALLOCATION_FAILED,
     EVENT_SOURCE_FAILED,
-    UNKNOWN_ERROR
+    UNKNOWN_ERROR,
 };
 
-/**
- * @brief Web Server Manager for ESP32 CNC Controller
- * 
- * Manages the AsyncWebServer instance, handling:
- * - Server initialization and startup
- * - WROK IN PROGRESS
- * 
- */
 class WebServerManager {
 private:
-    AsyncWebServer* server;
+
+    AsyncWebServer* server{nullptr};
     AsyncEventSource* events{nullptr};
-    SDCardManager* sdManager;
+    SDCardManager* sdManager{nullptr};
+
+    // Track initialization status
     bool serverInitialized{false};
+
+    // Track events initialization status
     bool eventsInitialized{false};
+
+    // Track server startup status
     bool serverStarted{false};
-    /**
-     * @brief Sets up all server routes and handlers
-     * 
-     * Called internally during initialization.
-    */
+
+    // Sets up all server routes and handlers
     void setupRoutes();
-    bool startUserCommand{false};
-    bool stopUserCommand{false};
+
+    // Endpoints
+    bool startUserCommand{false}; // Start button status
+    bool stopUserCommand{false}; // Stop button status
    
 public:
-    /**
-     * @brief Construct a new Web Server Manager
-     * 
-     * @param sdManager Pointer to initialized SD card manager
-     */
+
+    // Construct a new Web Server Manager Pointer to initialized SD card manager
     WebServerManager(SDCardManager* sdManager);
-    /**
-     * @brief Destroy and clean up allocated resources of the Web Server Manager
-     * 
-    */
+
+    // Destroy and clean up allocated resources of the Web Server Manager
     ~WebServerManager();
-    /**
-     * @brief Initialize the web server
-     * 
-     * Sets up the AsyncWebServer and EventSource.
-     * 
-     * @return WebServerError OK if successful, error code otherwise
-    */
-    WebServerError init();
-    /**
-     * @brief Start the web server
-     * 
-     * Sets up routes and begins listening for connections.
-     * 
-     * @return WebServerError OK if successful, error code otherwise
-    */
-    WebServerError begin();
-    /**
-     * @brief Check if the server has been started
-     * 
-     * @return true if the server has been started
-     * @return false if the server has not been started
-     */
+
+    // Sets up the AsyncWebServer and EventSource.
+    WebServerStatus init();
+
+    // Sets up routes and begins listening for connections.
+    WebServerStatus begin();
+
+    // Check if the server has been started
+    // true = server has been started
     bool isServerStarted();
-    /**
-     * @brief Check if the server has been initialized
-     * 
-     * @return true if the server has been initialized
-     * @return false if the server has not been initialized
-     */
+     
+    // Check if the server has been initialized
+    // true = server has been initialized
     bool isServerInitialized();
-    /**
-     * @brief Check if the events have been initialized
-     * 
-     * @return true if the events have been initialized
-     * @return false if the events have not been initialized
-     */
+    
+    // Check if the events have been initialized
+    // true = events have been initialized
     bool isEventsInitialized();
 
+    // Get Start button status
+    // true = start button has been pressed
     bool getStartCommand();
-    bool getStopCommand();
 
+    // Get Stop button status
+    // true = stop button has been pressed
+    bool getStopCommand();
 };

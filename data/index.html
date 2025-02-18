@@ -10,6 +10,15 @@
 <body>
   <div class="container">
     <h1>ESP32 CNC</h1>
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <div class="d-flex align-items-center">
+        <span class="me-2">SD Card:</span>
+        <div id="sd-status" class="rounded-circle" style="width: 20px; height: 20px; background-color: red;"></div>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="reinitializeSD()">
+        Re-initialize SD
+      </button>
+    </div>
     <p>ESP32 CNC is a web-based CNC controller for ESP32.</p>
 
     <h2>Available Files</h2>

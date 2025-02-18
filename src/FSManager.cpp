@@ -1,14 +1,10 @@
 #include "FSManager.h"
+#include <LittleFS.h>
 
-
-FSManagerError FSManager::init() {
-    // Attempt to mount LittleFS
-    // The 'false' parameter disables automatic formatting if mounting fails
+FSManagerStatus FSManager::init() {
     if (!LittleFS.begin(false)) {
-        // If mounting fails, log error and return false
-        return FSManagerError::MOUNT_FAILED;
+        return FSManagerStatus::MOUNT_FAILED;
     }
     
-    // Filesystem mounted successfully
-    return FSManagerError::OK;
+    return FSManagerStatus::OK;
 }

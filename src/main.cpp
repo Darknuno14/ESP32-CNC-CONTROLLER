@@ -6,8 +6,6 @@
 #include <SD.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
 
 #include "CONFIGURATION.h"
 #include "credentials.h"
@@ -26,18 +24,22 @@ volatile bool commandStart{false}; // Used to communicate between tasks, Task1 s
 volatile bool commandStop{false};  // ..webserver activity and then Task2 reads this flag and stops processing the file
 
 void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager);
-void processGCodeFile(const char* filename, const bool stopCondition, const bool pauseCondition);
+uint8_t processGCodeFile(const std::string& filename, const bool stopCondition, const bool pauseCondition);
+void connectToWiFi(WiFiManager* wifiManager);
+void startWebServer(WebServerManager* webServerManager);
 
 /*-- Tasks --*/
 
-void task1(void * parameter) {
+void taskControl(void * parameter) {
     Serial.printf("STATUS: Task1 started on core %d\n", xPortGetCoreID());
 
-    FSManager* fsManager = new FSManager(); // Allocate FSManager
-    WiFiManager* wifiManager = new WiFiManager(); // Allocate WiFiManager
-    WebServerManager* webServerManager = new WebServerManager(sdManager); // Allocate WebServerManager
+    FSManager* fsManager = new FSManager();
+    WiFiManager* wifiManager = new WiFiManager();
+    WebServerManager* webServerManager = new WebServerManager(sdManager); 
 
     initializeManagers(fsManager, sdManager, wifiManager, webServerManager);
+    connectToWiFi(wifiManager);
+    startWebServer(webServerManager);
     
     while (true) {
         commandStart = webServerManager->getStartCommand();
@@ -46,70 +48,85 @@ void task1(void * parameter) {
     }
 }
  
-void task2(void * parameter) {
+void taskCNC(void * parameter) {
     Serial.printf("STATUS: Task2 started on core %d\n", xPortGetCoreID());
+    /*
 
     enum class TaskState {
-        WAITING_FOR_PROJECT,
         IDLE,
-        PROCESSING,
-        STOPPED
+        RUNNING,
+        STOPPED,
+        JOG,
+        HOMMING
     };
 
-    TaskState state{TaskState::WAITING_FOR_PROJECT};
+    TaskState state{TaskState::IDLE};
     
-    while (true) {
+    while (false) {
+        switch (state) {
+            case TaskState::IDLE:
+                #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC STATUS: CNC is in idle state.");
+                #endif
+                if (commandStart) {
+                    state = TaskState::RUNNING;
+                }
+                break;
+            case TaskState::RUNNING: {
+                #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC STATUS: CNC is running.");
+                #endif
+                uint8_t programResult{ 0 };
 
-        if (sdManager == NULL) {
-            state = TaskState::WAITING_FOR_PROJECT;
-        } else {
-            switch (state) {
-                case TaskState::WAITING_FOR_PROJECT:
-                    if (sdManager->isProjectSelected()) {
-                        #ifdef DEBUG_CNC
-                            Serial.println("DEBUG CNC STATUS: Switching to idle state - project selected");
+                //programResult = processGCodeFile((sdManager->getSelectedProject().c_str()), commandStop, false);
+                
+                switch (programResult) {
+                    case 0:
+                        #ifdef DEBUG_CNC_TASK
+                            Serial.println("DEBUG CNC STATUS: Program completed successfully.");
                         #endif
                         state = TaskState::IDLE;
-                    }
-                    break;
-        
-                case TaskState::IDLE:
-                    if (commandStart) {
-                        #ifdef DEBUG_CNC
-                            Serial.println("DEBUG CNC STATUS: Switching to processing state - start command received");
-                        #endif
-                        state = TaskState::PROCESSING;
-                    }
-                    break;
-        
-                case TaskState::PROCESSING:
-                    if (commandStop) {
-                        #ifdef DEBUG_CNC
-                            Serial.println("DEBUG CNC STATUS: Switching to paused state - stop command received");
+                        break;
+                    case 1: // Stop condition triggered
+                        #ifdef DEBUG_CNC_TASK
+                            Serial.println("DEBUG CNC STATUS: Program stopped.");
                         #endif
                         state = TaskState::STOPPED;
-                    }
-                    processGCodeFile(sdManager->getSelectedProject().c_str(), commandStop, false);
-                    state = TaskState::IDLE;
-        
-                    break;
-        
-                case TaskState::STOPPED:
-                    if(true) {
-                        #ifdef DEBUG_CNC
-                            Serial.println("DEBUG CNC STATUS: Switching to waiting state - project stopped");
+                        break;
+                    case 2: // Error
+                        #ifdef DEBUG_CNC_TASK
+                            Serial.println("DEBUG CNC ERROR: Program error.");
                         #endif
-                        state = TaskState::WAITING_FOR_PROJECT;
-                    }
-                    break;
-        
-                default:
-                    break;
+                        state = TaskState::STOPPED;
+                        break;
+                    default:
+                        break;
                 }
+                break;
+            }
+            case TaskState::STOPPED:
+                #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC STATUS: CNC is stopped.");
+                #endif
+                if (commandStart) {
+                    state = TaskState::RUNNING;
+                }
+                break;
+            case TaskState::JOG:
+                // Implement as needed
+                break;
+            case TaskState::HOMMING:
+                // Implement as needed
+                break;
+            default:
+                break;
         }
-
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+        */
+       while(true) {
+           vTaskDelay(pdMS_TO_TICKS(10));
+       }
 }
 
 /*-- Main Program --*/
@@ -117,31 +134,25 @@ void task2(void * parameter) {
 void setup() {
     Serial.begin(115200);
     delay(1000);
-    SPI.begin(SD_CLK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
+    SPI.begin(CONFIG::SD_CLK_PIN, CONFIG::SD_MISO_PIN, CONFIG::SD_MOSI_PIN);
 
-    // Task configuration
-    constexpr uint32_t WEBSERVER_STACK_SIZE = 8192;
-    constexpr uint32_t CNC_STACK_SIZE = 8192;
-    constexpr uint8_t WEBSERVER_TASK_PRIORITY = 1;
-    constexpr uint8_t CNC_TASK_PRIORITY = 1;
-    constexpr BaseType_t CORE_0 = 0;
-    constexpr BaseType_t CORE_1 = 1; 
     
-    xTaskCreatePinnedToCore(task1, 
-                            "WebServer", 
-                            8192, 
+    xTaskCreatePinnedToCore(taskControl,  // Task function
+                            "Control",  // Task name
+                            CONFIG::CONTROLTASK_STACK_SIZE,  // Stack size
                             NULL,   // Parameters
-                            WEBSERVER_TASK_PRIORITY,      // Priority
+                            CONFIG::CONTROLTASK_PRIORITY,      // Priority
                             NULL,   // Task handle
-                            CORE_0);
+                            CONFIG::CORE_0 // Core
+                            );
 
-    xTaskCreatePinnedToCore(task2, 
+    xTaskCreatePinnedToCore(taskCNC, 
                            "CNC", 
-                           8192, 
+                           CONFIG::CNCTASK_STACK_SIZE, 
                            NULL,
-                           CNC_TASK_PRIORITY, 
+                           CONFIG::CNCTASK_PRIORITY, 
                            NULL, 
-                           CORE_1);
+                           CONFIG::CORE_1);
 }
 
 void loop() {
@@ -151,113 +162,133 @@ void loop() {
 /*-- MISCELLANEOUS FUNCTIONS --*/
 
 void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager) {
-// Initialize filesystem manager
-    switch(fsManager->init()) {
-    case FSManagerError::OK:
-        Serial.println("STATUS: Filesystem initialized");
-        break;
-    case FSManagerError::MOUNT_FAILED:
-        Serial.println("ERROR: Filesystem mount failed");
-        break;
-    default:
-        Serial.println("ERROR: Unknown error during initialization");
-        break;
+    
+    FSManagerStatus fsManagerStatus = fsManager->init();
+    SDMenagerStatus sdManagerStatus = sdManager->init();
+    WiFiManagerStatus wifiManagerStatus = wifiManager->init();
+    WebServerStatus webServerManagerStatus = webServerManager->init();
+
+    #ifdef DEBUG_CONTROL_TASK
+    switch(fsManagerStatus) {
+        case FSManagerStatus::OK: 
+            Serial.println("STATUS: FS Manager initialized successfully."); break;
+        case FSManagerStatus::MOUNT_FAILED:
+            Serial.println("ERROR: FS Manager initialization failed."); break;
+        default:
+            Serial.println("ERROR: FS Manager unknown error."); break;
     }
 
-    // Initialize SD card manager
-    switch (sdManager->init()) {
-    case SDCardError::OK:
-      Serial.println("STATUS: SD card initialized");
-      break;
-    case SDCardError::INIT_FAILED:
-      Serial.println("ERROR: SD card initialization failed");
-      break;
-    case SDCardError::DIRECTORY_CREATE_FAILED:
-      Serial.println("ERROR: Projects directory creation failed");
-      break;
-    default:
-      Serial.println("ERROR: Unknown error during initialization");
+    switch(sdManagerStatus) {
+        case SDMenagerStatus::OK: 
+            Serial.println("STATUS: SD Manager initialized successfully."); break;
+        case SDMenagerStatus::INIT_FAILED:
+            Serial.println("ERROR: SD Manager initialization failed."); break;
+        case SDMenagerStatus::DIRECTORY_CREATE_FAILED:
+            Serial.println("ERROR: SD Manager directory creation failed."); break;
+        case SDMenagerStatus::DIRECTORY_OPEN_FAILED:
+            Serial.println("ERROR: SD Manager directory open failed."); break;
+        case SDMenagerStatus::MUTEX_CREATE_FAILED:
+            Serial.println("ERROR: SD Manager mutex creation failed."); break;
+        case SDMenagerStatus::FILE_OPEN_FAILED:
+            Serial.println("ERROR: SD Manager file open failed."); break;
+        case SDMenagerStatus::CARD_NOT_INITIALIZED:
+            Serial.println("ERROR: SD Manager card not initialized."); break;
+        default:
+            Serial.println("ERROR: SD Manager unknown error."); break;
     }
 
-    if (wifiManager->connect(WIFI_SSID, WIFI_PASSWORD)) {
-        Serial.println("STATUS: WiFi connected");
+    switch(wifiManagerStatus){
+        case WiFiManagerStatus::OK:
+            Serial.println("STATUS: WiFi Manager initialized successfully."); break;
+        case WiFiManagerStatus::STA_MODE_FAILED:
+            Serial.println("ERROR: WiFi Manager STA mode failed."); break;
+        case WiFiManagerStatus::WIFI_NO_CONNECTION:
+            Serial.println("ERROR: WiFi Manager no WiFi connection."); break;
+        default:
+            Serial.println("ERROR: WiFi Manager unknown error."); break;
     }
 
-    switch(webServerManager->init()) {
-    case WebServerError::OK:
-        Serial.println("STATUS: Web server initialized");
-        break;
-    case WebServerError::ALREADY_INITIALIZED:
-        Serial.println("ERROR: Web server already initialized");
-        break;
-    case WebServerError::SERVER_ALLOCATION_FAILED:
-        Serial.println("ERROR: Web server allocation failed");
-        break;
-    case WebServerError::EVENT_SOURCE_FAILED:
-        Serial.println("ERROR: Event source failed");
-        break;
-    default:
-        Serial.println("ERROR: Unknown error during initialization");
-        break;
+    switch(webServerManagerStatus){
+        case WebServerStatus::OK:
+            Serial.println("STATUS: Web Server Manager initialized successfully."); break;
+        case WebServerStatus::ALREADY_INITIALIZED:
+            Serial.println("ERROR: Web Server Manager already initialized."); break;
+        case WebServerStatus::SERVER_ALLOCATION_FAILED:
+            Serial.println("ERROR: Web Server Manager server allocation failed."); break;
+        case WebServerStatus::EVENT_SOURCE_FAILED:
+            Serial.println("ERROR: Web Server Manager event source failed."); break;
+        case WebServerStatus::UNKNOWN_ERROR:
+            Serial.println("ERROR: Web Server Manager unknown error."); break;
+        default:
+            Serial.println("ERROR: Web Server Manager unknown error."); break;
     }
+    #endif
 
-    switch (webServerManager->begin())
-   {
-   case WebServerError::OK:
-        Serial.println("STATUS: Web server started");
-        break;
-    case WebServerError::ALREADY_INITIALIZED:
-        Serial.println("ERROR: Web server already started");
-        break;   
-   default:
-        Serial.println("ERROR: Unknown error during initialization");
-        break;
-   }
 }
 
-void processGCodeFile(const char* filename, const bool stopCondition, const bool pauseCondition) {
-    #ifdef DEBUG_CNC
+void connectToWiFi(WiFiManager* wifiManager) {
+    WiFiManagerStatus wifiManagerStatus = wifiManager->connect(WIFI_SSID, WIFI_PASSWORD, 10000);
+    if (wifiManagerStatus == WiFiManagerStatus::OK) {
+        Serial.println("STATUS: Connected to WiFi.");
+    } else {
+        Serial.println("ERROR: Failed to connect to WiFi.");
+    }
+}
+
+void startWebServer(WebServerManager* webServerManager) {
+    WebServerStatus webServerStatus = webServerManager->begin();
+    if (webServerStatus == WebServerStatus::OK) {
+        Serial.println("STATUS: Web server started.");
+    } else {
+        Serial.println("ERROR: Web server failed to start.");
+    }
+}
+
+
+uint8_t processGCodeFile(const std::string& filename, const bool stopCondition, const bool pauseCondition) {
+    #ifdef DEBUG_CNC_TASK
         Serial.println("DEBUG CNC STATUS: Attempting to process file");
     #endif
 
-    if (sdManager->takeSD()) {
-        String filePath = String(sdManager->projectsDirectory) + "/" + String(filename);
-        File file = SD.open(filePath);
-        
-        if (!file) {
-            #ifdef DEBUG_CNC
-                Serial.println("DEBUG CNC ERROR: Failed to open file");
-            #endif
-            sdManager->giveSD();
-            return;
-        } else {
-            #ifdef DEBUG_CNC
-                Serial.println("DEBUG CNC STATUS: Processing file: " + filePath + "\n");
-            #endif
-        }
+    if(!sdManager->takeSD()) {
+        return 2; // Error: unable to lock SD card
+    }
 
-        while (file.available() && !stopCondition) {
-            if (!pauseCondition) {
-                String line = file.readStringUntil('\n');
-                Serial.printf("Processing line: %s\n", line.c_str());
-                vTaskDelay(pdMS_TO_TICKS(100)); // Simulate processing time
-            }
-        }
-
-        file.close();
-        sdManager->giveSD();
-        #ifdef DEBUG_CNC
-            Serial.println("DEBUG CNC STATUS: Processing complete");
+    std::string filePath = CONFIG::PROJECTS_DIR + filename;
+    File file {SD.open(filePath.c_str())};
+    if(!file) {
+        #ifdef DEBUG_CNC_TASK
+            Serial.println("DEBUG CNC ERROR: Failed to open file");
         #endif
-                       
-        if (stopCondition)
-        {
-            #ifdef DEBUG_CNC
-                Serial.println("DEBUG CNC STATUS: Processing stopped via stop condition");
-            #endif
-            sdManager->giveSD();
-            file.close();
-            return;
+        sdManager->giveSD();
+        return 2;
+    } else {
+        #ifdef DEBUG_CNC_TASK
+            Serial.println(("DEBUG CNC STATUS: Processing file: " + filePath).c_str());
+        #endif
+    }
+
+    while(file.available() && !stopCondition) {
+        if (!pauseCondition) {
+            String line = file.readStringUntil('\n');
+            Serial.printf("Processing line: %s\n", line.c_str());
         }
     }
+
+    if(stopCondition) {
+        #ifdef DEBUG_CNC_TASK
+            Serial.println("DEBUG CNC STATUS: Processing stopped via stop condition");
+        #endif
+        file.close();
+        sdManager->giveSD();
+        return 1;
+    }
+
+    #ifdef DEBUG_CNC_TASK
+    Serial.println("DEBUG CNC STATUS: Processing complete");
+    #endif
+
+    file.close();
+    sdManager->giveSD();
+    return 0;
 }
