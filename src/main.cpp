@@ -24,7 +24,7 @@ volatile bool commandStart{false}; // Used to communicate between tasks, Task1 s
 volatile bool commandStop{false};  // ..webserver activity and then Task2 reads this flag and stops processing the file
 
 void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager);
-uint8_t processGCodeFile(const std::string& filename, const bool stopCondition, const bool pauseCondition);
+uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopCondition, const bool& pauseCondition);
 void connectToWiFi(WiFiManager* wifiManager);
 void startWebServer(WebServerManager* webServerManager);
 
@@ -50,7 +50,7 @@ void taskControl(void * parameter) {
  
 void taskCNC(void * parameter) {
     Serial.printf("STATUS: Task2 started on core %d\n", xPortGetCoreID());
-    /*
+
 
     enum class TaskState {
         IDLE,
@@ -62,11 +62,11 @@ void taskCNC(void * parameter) {
 
     TaskState state{TaskState::IDLE};
     
-    while (false) {
+    while (true) {
         switch (state) {
             case TaskState::IDLE:
                 #ifdef DEBUG_CNC_TASK
-                    Serial.println("DEBUG CNC STATUS: CNC is in idle state.");
+                    // Serial.println("DEBUG CNC STATUS: CNC is in idle state.");
                 #endif
                 if (commandStart) {
                     state = TaskState::RUNNING;
@@ -78,7 +78,7 @@ void taskCNC(void * parameter) {
                 #endif
                 uint8_t programResult{ 0 };
 
-                //programResult = processGCodeFile((sdManager->getSelectedProject().c_str()), commandStop, false);
+                programResult = processGCodeFile(sdManager->getSelectedProject(), commandStop, false);
                 
                 switch (programResult) {
                     case 0:
@@ -123,10 +123,10 @@ void taskCNC(void * parameter) {
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-        */
-       while(true) {
-           vTaskDelay(pdMS_TO_TICKS(10));
-       }
+
+    while(true) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }
 
 /*-- Main Program --*/
@@ -245,13 +245,16 @@ void startWebServer(WebServerManager* webServerManager) {
 }
 
 
-uint8_t processGCodeFile(const std::string& filename, const bool stopCondition, const bool pauseCondition) {
+uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopCondition, const bool& pauseCondition) {
     #ifdef DEBUG_CNC_TASK
         Serial.println("DEBUG CNC STATUS: Attempting to process file");
     #endif
 
     if(!sdManager->takeSD()) {
         return 2; // Error: unable to lock SD card
+        #ifdef DEBUG_CNC_TASK
+            Serial.println("DEBUG CNC STATUS: Failed to lock SD card");
+        #endif
     }
 
     std::string filePath = CONFIG::PROJECTS_DIR + filename;
