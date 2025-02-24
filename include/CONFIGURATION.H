@@ -22,6 +22,14 @@ constexpr uint8_t SD_MOSI_PIN = 23;    // Master Out Slave In
 constexpr uint8_t SD_CLK_PIN = 18;     // Clock
 constexpr uint8_t SD_MISO_PIN = 19;    // Master In Slave Out
 
+constexpr uint8_t WIRE_RELAY_PIN = 255;       // Relay
+constexpr uint8_t FAN_RELAY_PIN = 255;           // Emergency Stop
+
+constexpr uint8_t STEP_X_PIN = 255;       // Step
+constexpr uint8_t DIR_X_PIN = 255;        // Direction
+constexpr uint8_t STEP_Y_PIN = 255;       // Step
+constexpr uint8_t DIR_Y_PIN = 255;        // Direction
+
 
 // ============================================================================
 // Task configuration
@@ -32,8 +40,11 @@ constexpr uint8_t CNCTASK_PRIORITY = 1;
 constexpr BaseType_t CORE_0 = 0;
 constexpr BaseType_t CORE_1 = 1; 
 
-
-
 // ============================================================================
     constexpr const char* PROJECTS_DIR{"/Projects/"};
+    constexpr const char* CONFIG_DIR{"/Config/"};
+}
+
+namespace TEMP{
+    constexpr long delayAfterStartup{2000}; // Delay after startup in ms
 }
