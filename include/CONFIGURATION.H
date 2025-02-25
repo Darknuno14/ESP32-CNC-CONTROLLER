@@ -47,4 +47,8 @@ constexpr BaseType_t CORE_1 = 1;
 
 namespace TEMP{
     constexpr long delayAfterStartup{2000}; // Delay after startup in ms
+    constexpr float stepsPerMMAxisX = 100.0f;  // Kroki na mm osi X
+    constexpr float stepsPerMMAxisY = 100.0f;  // Kroki na mm osi Y
+    constexpr float defaultFeedRate = 500.0f; // Domyślna prędkość w mm/min
+    constexpr bool useGCodeFeedRate = true; // Użyj prędkości z GCode
 }
