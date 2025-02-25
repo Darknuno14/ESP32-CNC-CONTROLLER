@@ -22,6 +22,7 @@
 
 // Globalna instancja, aby był dostęp dla wszystkich zadań
 SDCardManager* sdManager{new SDCardManager()};
+ConfigManager* configManager{new ConfigManager(sdManager)};
 
 // Zmienne globalne do komunikacji między zadaniami.
 // Task1 ustawia tę flagę na true, na podstawie aktywności serwera web,
@@ -82,7 +83,7 @@ struct ProgressData {
 
 /* --FUNCTION PROTOTYPES-- */
 
-void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager);
+void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager, ConfigManager* configManager);
 void connectToWiFi(WiFiManager* wifiManager);
 void startWebServer(WebServerManager* webServerManager);
 float getParameter(const String& line, char param);
@@ -99,13 +100,28 @@ void taskControl(void * parameter) {
     WiFiManager* wifiManager = new WiFiManager();
     WebServerManager* webServerManager = new WebServerManager(sdManager); 
 
-    initializeManagers(fsManager, sdManager, wifiManager, webServerManager);
+    initializeManagers(fsManager, sdManager, wifiManager, webServerManager, configManager);
     connectToWiFi(wifiManager);
     startWebServer(webServerManager);
     
     while (true) {
         commandStart = webServerManager->getStartCommand();
         commandStop = webServerManager->getStopCommand();
+        commandPause = webServerManager->getPauseCommand();
+        commandJog = webServerManager->getJogCommand();
+        commandHoming = webServerManager->getHomingCommand();
+        
+        if (webServerManager->getZeroCommand()) {
+            // Zerowanie pozycji można obsłużyć tutaj lub przekazać flagę do zadania CNC
+        }
+        
+        if (webServerManager->getEmergencyStopCommand()) {
+            commandReset = true;  // Zatrzymanie awaryjne
+        }
+        
+        // Aktualizacja stanu drutu i wentylatora na podstawie WebServerManager
+        cuttingActive = webServerManager->getWireState();
+        
         vTaskDelay(pdMS_TO_TICKS(10)); // delay to prevent watchdog timeouts
     }
 }
@@ -129,26 +145,52 @@ void taskCNC(void * parameter) {
     MachineState state {};
     state.relativeMode = false;
 
-    state.X.maxFeedRate = 0.0f;
-    state.X.maxAcceleration = 0.0f;
-    state.X.rapidFeedRate = 0.0f;
-    state.X.rapidAcceleration = 0.0f;
-
-    state.Y.maxFeedRate = 0.0f;
-    state.Y.maxAcceleration = 0.0f;
-    state.Y.rapidFeedRate = 0.0f;
-    state.Y.rapidAcceleration = 0.0f;
+    // Załaduj konfigurację jeśli dostępna
+    if (configManager && configManager->isConfigLoaded()) {
+        MachineConfig config = configManager->getConfig();
+        
+        // Zastosuj konfigurację do stanu maszyny
+        state.X.stepsPerMM = config.xAxis.stepsPerMM;
+        state.X.maxFeedRate = config.xAxis.maxFeedRate;
+        state.X.maxAcceleration = config.xAxis.maxAcceleration;
+        state.X.rapidFeedRate = config.xAxis.rapidFeedRate;
+        state.X.rapidAcceleration = config.xAxis.rapidAcceleration;
+        
+        state.Y.stepsPerMM = config.yAxis.stepsPerMM;
+        state.Y.maxFeedRate = config.yAxis.maxFeedRate;
+        state.Y.maxAcceleration = config.yAxis.maxAcceleration;
+        state.Y.rapidFeedRate = config.yAxis.rapidFeedRate;
+        state.Y.rapidAcceleration = config.yAxis.rapidAcceleration;
+    } else {
+        // Jeśli nie ma konfiguracji, ustaw domyślne wartości
+        state.X.stepsPerMM = 200.0f;
+        state.X.maxFeedRate = 3000.0f;
+        state.X.maxAcceleration = 500.0f;
+        state.X.rapidFeedRate = 5000.0f;
+        state.X.rapidAcceleration = 1000.0f;
+        
+        state.Y.stepsPerMM = 200.0f;
+        state.Y.maxFeedRate = 3000.0f;
+        state.Y.maxAcceleration = 500.0f;
+        state.Y.rapidFeedRate = 5000.0f;
+        state.Y.rapidAcceleration = 1000.0f;
+    }
 
     state.progressQueue = xQueueCreate(5, sizeof(ProgressData));
+
+    MachineConfig config {};
+
+    uint8_t processResult{};
 
     while (true) {
 
         // Wysyłaj aktualizacje statusu okresowo
         if (millis() - lastStatusUpdateTime > STATUS_UPDATE_INTERVAL) {
-            ProgressData data {state.currentX, state.currentX, currentState}; 
+            ProgressData data {state.currentX, state.currentY, currentState}; 
             xQueueSend(state.progressQueue, &data, 0);
-            lastStatusUpdateTime = millis();
         }
+            
+        
         // Sprawdź, czy projekt jest wybrany
         projectReady = sdManager->isProjectSelected();
         if (projectReady) {
@@ -195,9 +237,10 @@ void taskCNC(void * parameter) {
                 #endif
 
                 cuttingActive = true;
-                vTaskDelay(pdMS_TO_TICKS(TEMP::delayAfterStartup)); // Czekaj aż drut się nagrzeje
+                config = configManager->getConfig();
+                vTaskDelay(pdMS_TO_TICKS(config.delayAfterStartup));
                                            
-                uint8_t processResult = processGCodeFile(
+                processResult = processGCodeFile(
                     projectName,
                     commandStop, 
                     commandPause, 
@@ -329,12 +372,13 @@ void loop() {
 
 /*-- MISCELLANEOUS FUNCTIONS --*/
 
-void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager) {
+void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager, ConfigManager* configManager) {
     
     FSManagerStatus fsManagerStatus = fsManager->init();
     SDMenagerStatus sdManagerStatus = sdManager->init();
     WiFiManagerStatus wifiManagerStatus = wifiManager->init();
     WebServerStatus webServerManagerStatus = webServerManager->init();
+    ConfigManagerStatus configManagerStatus = configManager->init();
 
     #ifdef DEBUG_CONTROL_TASK
     switch(fsManagerStatus) {
@@ -389,6 +433,25 @@ void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiMana
             Serial.println("ERROR: Web Server Manager unknown error."); break;
         default:
             Serial.println("ERROR: Web Server Manager unknown error."); break;
+    }
+    #endif
+
+    #ifdef DEBUG_CONTROL_TASK
+    switch(configManagerStatus) {
+        case ConfigManagerStatus::OK: 
+            Serial.println("STATUS: Config Manager initialized successfully."); break;
+        case ConfigManagerStatus::FILE_OPEN_FAILED:
+            Serial.println("WARNING: Config file not found, using defaults."); break;
+        case ConfigManagerStatus::FILE_WRITE_FAILED:
+            Serial.println("ERROR: Config Manager file write failed."); break;
+        case ConfigManagerStatus::JSON_PARSE_ERROR:
+            Serial.println("ERROR: Config Manager JSON parse error."); break;
+        case ConfigManagerStatus::JSON_SERIALIZE_ERROR:
+            Serial.println("ERROR: Config Manager JSON serialize error."); break;
+        case ConfigManagerStatus::SD_ACCESS_ERROR:
+            Serial.println("ERROR: Config Manager SD access error."); break;
+        default:
+            Serial.println("ERROR: Config Manager unknown error."); break;
     }
     #endif
 
@@ -471,14 +534,15 @@ bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepper
                                 (state.relativeMode ? state.currentY + targetY : targetY)};
                     
                     // Oblicz prędkość ruchu w zależności od komendy ruchu
+                    MachineConfig config = configManager->getConfig();
                     float moveSpeedX {(gCode == 0) ? state.X.rapidFeedRate : 
-                                     (TEMP::useGCodeFeedRate && !isnan(feedRate)) ? 
+                                     (config.useGCodeFeedRate && !isnan(feedRate)) ? 
                                      constrain(feedRate, 0.1, state.X.maxFeedRate) : state.X.maxFeedRate};
                     float moveSpeedY {(gCode == 0) ? state.Y.rapidFeedRate : 
-                                     (TEMP::useGCodeFeedRate && !isnan(feedRate)) ? 
+                                     (config.useGCodeFeedRate && !isnan(feedRate)) ? 
                                      constrain(feedRate, 0.1, state.Y.maxFeedRate) : state.Y.maxFeedRate};
-
-                    // Oblicz ruch w krokach
+                    
+                     // Oblicz ruch w krokach
                     long targetStepsX {newX * state.X.stepsPerMM};
                     long targetStepsY {newY * state.Y.stepsPerMM};
                     

@@ -1,0 +1,126 @@
+/* Główne style dla ESP32 CNC */
+.status-indicator {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-on {
+  background-color: #28a745;
+}
+
+.status-off {
+  background-color: #dc3545;
+}
+
+.status-warning {
+  background-color: #ffc107;
+}
+
+/* Style dla kontrolera JOG */
+.jog-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.jog-row {
+  display: flex;
+  margin-bottom: 0.5rem;
+}
+
+.jog-button {
+  width: 60px;
+  height: 60px;
+  margin: 0.25rem;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.jog-center {
+  background-color: #f8f9fa;
+  border-color: #ced4da;
+}
+
+.jog-distance-select {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+/* Style dla przycisków kontrolnych */
+.control-buttons {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.control-buttons .btn {
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Style dla tabeli projektów */
+.project-table {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.project-table th,
+.project-table td {
+  padding: 0.75rem;
+  vertical-align: middle;
+}
+
+.project-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Style dla wizualizacji G-code */
+.gcode-preview-container {
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+.gcode-preview-controls {
+  margin-bottom: 1rem;
+}
+
+.position-display {
+  font-family: monospace;
+  font-size: 1.2rem;
+  padding: 0.5rem;
+  background-color: #f8f9fa;
+  border: 1px solid #ced4da;
+  border-radius: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.position-coordinates {
+  display: flex;
+  justify-content: space-around;
+}
+
+/* Status message */
+.status-message {
+  margin: 1rem 0;
+  padding: 1rem;
+  border-radius: 0.25rem;
+  display: none;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+  .jog-button {
+    width: 50px;
+    height: 50px;
+    font-size: 1rem;
+  }
+  
+  .position-coordinates {
+    flex-direction: column;
+  }
+}

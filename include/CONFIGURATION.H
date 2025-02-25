@@ -22,13 +22,13 @@ constexpr uint8_t SD_MOSI_PIN = 23;    // Master Out Slave In
 constexpr uint8_t SD_CLK_PIN = 18;     // Clock
 constexpr uint8_t SD_MISO_PIN = 19;    // Master In Slave Out
 
-constexpr uint8_t WIRE_RELAY_PIN = 255;       // Relay
-constexpr uint8_t FAN_RELAY_PIN = 255;           // Emergency Stop
+constexpr uint8_t WIRE_RELAY_PIN = 12;       // Relay
+constexpr uint8_t FAN_RELAY_PIN = 13;           // Emergency Stop
 
-constexpr uint8_t STEP_X_PIN = 255;       // Step
-constexpr uint8_t DIR_X_PIN = 255;        // Direction
-constexpr uint8_t STEP_Y_PIN = 255;       // Step
-constexpr uint8_t DIR_Y_PIN = 255;        // Direction
+constexpr uint8_t STEP_X_PIN = 32;       // Step
+constexpr uint8_t DIR_X_PIN = 33;        // Direction
+constexpr uint8_t STEP_Y_PIN = 25;       // Step
+constexpr uint8_t DIR_Y_PIN = 26;        // Direction
 
 
 // ============================================================================
