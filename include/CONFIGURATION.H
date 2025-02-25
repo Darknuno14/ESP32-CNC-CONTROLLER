@@ -9,6 +9,7 @@
 #define DEBUG_SERVER_ROUTES
 #define DEBUG_SD
 #define DEBUG_WIFI
+#define DEBUG_CONFIG_MANAGER
 
 
 namespace CONFIG{
@@ -43,12 +44,4 @@ constexpr BaseType_t CORE_1 = 1;
 // ============================================================================
     constexpr const char* PROJECTS_DIR{"/Projects/"};
     constexpr const char* CONFIG_DIR{"/Config/"};
-}
-
-namespace TEMP{
-    constexpr long delayAfterStartup{2000}; // Delay after startup in ms
-    constexpr float stepsPerMMAxisX = 100.0f;  // Kroki na mm osi X
-    constexpr float stepsPerMMAxisY = 100.0f;  // Kroki na mm osi Y
-    constexpr float defaultFeedRate = 500.0f; // Domyślna prędkość w mm/min
-    constexpr bool useGCodeFeedRate = true; // Użyj prędkości z GCode
 }
