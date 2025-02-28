@@ -79,6 +79,9 @@ WebServerStatus WebServerManager::begin() {
             .setCacheControl("max-age=86400"); // Cache for 24 hours
     }
     
+    // Setup the routes for the web server
+    setupRoutes();
+    
     // Serve JavaScript files (z większym bezpieczeństwem)
     if (LittleFS.exists("/js/")) {
         server->serveStatic("/js/", LittleFS, "/js/")
@@ -89,8 +92,6 @@ WebServerStatus WebServerManager::begin() {
     server->serveStatic("/", LittleFS, "/")
         .setDefaultFile("index.html");
 
-    // Setup the routes for the web server
-    setupRoutes();
     
     // Start the web server
     server->begin();

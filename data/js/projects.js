@@ -102,7 +102,7 @@ function refreshFileList() {
         throw new Error('Failed to refresh files on ESP32');
       }
       // Następnie pobierz zaktualizowaną listę plików
-      return fetch('/api/sd-files');
+      return fetch('/api/list-files');
     })
     .then(response => {
       if (!response.ok) {
