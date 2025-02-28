@@ -66,9 +66,10 @@ function updateFileList(files) {
 
 // Pobieranie listy plików z serwera
 function fetchFileList() {
-  fetch('/api/sd-files')
+  fetch('/api/list-files')
     .then(response => response.json())
     .then(data => {
+      console.log('File list received:', data);
       if (Array.isArray(data)) {
         updateFileList(data);
       } else if (data.files && Array.isArray(data.files)) {
@@ -78,7 +79,6 @@ function fetchFileList() {
         updateFileList([]);
       }
       
-      // Sprawdź, czy jest wybrany plik w localStorage
       const storedFile = localStorage.getItem('selectedFile');
       if (storedFile && (Array.isArray(data) ? data.includes(storedFile) : (data.files && data.files.includes(storedFile)))) {
         selectedFilename = storedFile;
@@ -151,6 +151,7 @@ function submitFileSelection() {
 
 // Podgląd zawartości pliku G-code
 function viewGCode(filename) {
+  // Use the correct endpoint format that matches your server implementation
   fetch('/api/sd-files/' + encodeURIComponent(filename))
     .then(response => {
       if (!response.ok) throw new Error('Failed to fetch file content');
@@ -511,7 +512,7 @@ function uploadFile() {
   progressBar.textContent = '0%';
   uploadMessage.style.display = 'none';
   
-  fetch('/api/upload', {
+  fetch('/api/upload-file', {
     method: 'POST',
     body: formData,
   })

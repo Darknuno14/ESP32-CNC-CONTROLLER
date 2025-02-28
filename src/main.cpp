@@ -108,6 +108,7 @@ void taskControl(void * parameter) {
  
 void taskCNC(void * parameter) {
     Serial.printf("STATUS: Task2 started on core %d\n", xPortGetCoreID());
+    vTaskDelay(pdMS_TO_TICKS(10000));
 
     MachineState state {};
     state.state = CNCState::IDLE;
@@ -123,6 +124,7 @@ void taskCNC(void * parameter) {
     state.jobRunTime = 0;
     state.hasError = false;
     state.errorCode = 0;
+    state.currentProject = "";
 
     bool processingStopped = false;
 
@@ -142,9 +144,8 @@ void taskCNC(void * parameter) {
 
 void setup() {
     Serial.begin(115200);
-    delay(1000);
-
     SPI.begin(CONFIG::SD_CLK_PIN, CONFIG::SD_MISO_PIN, CONFIG::SD_MOSI_PIN);
+    delay(200);
 
     pinMode(CONFIG::WIRE_RELAY_PIN, OUTPUT); digitalWrite(CONFIG::WIRE_RELAY_PIN, LOW);
     pinMode(CONFIG::FAN_RELAY_PIN, OUTPUT); digitalWrite(CONFIG::FAN_RELAY_PIN, LOW);
@@ -153,25 +154,34 @@ void setup() {
     stateQueue = xQueueCreate(5, sizeof(MachineState));
     commandQueue = xQueueCreate(10, sizeof(WebserverCommand));
 
+    Serial.println("Creating Control task...");
     xTaskCreatePinnedToCore(taskControl,  // Task function
                             "Control",  // Task name
                             CONFIG::CONTROLTASK_STACK_SIZE,  // Stack size
                             NULL,   // Parameters
                             CONFIG::CONTROLTASK_PRIORITY,      // Priority
                             NULL,   // Task handle
-                            CONFIG::CORE_0 // Core
+                            CONFIG::CORE_1 // Core
                             );
 
+    delay(200);
+
+    Serial.println("Creating CNC task...");
     xTaskCreatePinnedToCore(taskCNC, 
-                           "CNC", 
-                           CONFIG::CNCTASK_STACK_SIZE, 
-                           NULL,
-                           CONFIG::CNCTASK_PRIORITY, 
-                           NULL, 
-                           CONFIG::CORE_1);
+                            "CNC", 
+                            CONFIG::CNCTASK_STACK_SIZE, 
+                            NULL,
+                            CONFIG::CNCTASK_PRIORITY,
+                            NULL, 
+                            CONFIG::CORE_0);
+    delay(200);
 }
 
-void loop() {}
+void loop() {
+    // Empty loop
+
+
+}
 
 /*-- MISCELLANEOUS FUNCTIONS --*/
 
@@ -181,7 +191,7 @@ void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiMana
     SDManagerStatus sdManagerStatus {sdManager->init()};
     WiFiManagerStatus wifiManagerStatus {wifiManager->init()};
     WebServerStatus webServerManagerStatus {webServerManager->init()};
-    ConfigManagerStatus configManagerStatus {webServerManagerStatus == WebServerStatus::OK ? configManager->init() : ConfigManagerStatus::SD_ACCESS_ERROR};
+    ConfigManagerStatus configManagerStatus {configManager->init()};
 
     #ifdef DEBUG_CONTROL_TASK
         switch(fsManagerStatus) {

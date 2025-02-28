@@ -65,11 +65,8 @@ WebServerStatus WebServerManager::init() {
 WebServerStatus WebServerManager::begin() {
     // Check if the server is initialized
     if (server == nullptr) {
-        return WebServerStatus::ALREADY_INITIALIZED;
+        return WebServerStatus::NOT_INITIALIZED;
     }
-
-    // Setup the routes for the web server
-    setupRoutes();
 
     // Add the event source handler to the server
     if (events != nullptr) {
@@ -92,6 +89,9 @@ WebServerStatus WebServerManager::begin() {
     server->serveStatic("/", LittleFS, "/")
         .setDefaultFile("index.html");
 
+    // Setup the routes for the web server
+    setupRoutes();
+    
     // Start the web server
     server->begin();
     this->serverStarted = true;
@@ -104,10 +104,10 @@ void WebServerManager::setupRoutes() {
 
     // Brak strony
     server->onNotFound([](AsyncWebServerRequest *request) {
-        #ifdef DEBUG_SERVER_ROUTES
-            Serial.printf("DEBUG SERVER ERROR: Route not found: %s\n", request->url().c_str());
-        #endif
-        request->send(404);
+        Serial.printf("404 Not Found: %s (Method: %s)\n", 
+                     request->url().c_str(), 
+                     request->methodToString());
+        request->send(404, "text/plain", "404: Not found");
     });
 
     server->on("/", HTTP_GET, [](AsyncWebServerRequest *request) {

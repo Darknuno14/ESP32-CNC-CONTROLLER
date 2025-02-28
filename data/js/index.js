@@ -7,7 +7,7 @@ let eventSource;
 
 // Aktualizacja statusu maszyny
 function updateMachineStatus() {
-  fetch('/api/machine-status')
+  fetch('/api/update-machine-status')
     .then(response => response.json())
     .catch(error => {
       console.error('Error fetching machine status:', error);
@@ -22,6 +22,7 @@ function updateMachineStatus() {
       };
     })
     .then(data => {
+      console.log('Machine status updated successfully');
       updateUIWithMachineState(data);
     });
 }
