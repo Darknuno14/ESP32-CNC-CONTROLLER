@@ -41,7 +41,7 @@ struct MachineState {
     bool isPaused {false};
     
     // Stan urządzeń
-    bool spindleOn {false};  // Stan drutu
+    bool hotWireOn {false};  // Stan drutu
     bool fanOn {false};      // Stan wentylatora
     
     // Informacje o zadaniu

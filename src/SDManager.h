@@ -43,6 +43,7 @@ public:
 
     // Domyślny konstruktor dla SDCardManager
     SDCardManager() = default;
+    ~SDCardManager();
 
     // Inicjalizacja menadżera karty SD
     SDManagerStatus init();

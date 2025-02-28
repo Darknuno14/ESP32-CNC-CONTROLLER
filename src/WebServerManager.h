@@ -26,7 +26,7 @@ private:
     SDCardManager* sdManager {nullptr};
     ConfigManager* configManager  {nullptr};
 
-    QueueHandle_t commandQueue; 
+    QueueHandle_t commandQueue; // Zasada Inversion of Control
 
     // Track initialization status
     bool serverInitialized {false};
@@ -47,7 +47,7 @@ private:
 public:
 
     // Construct a new Web Server Manager Pointer to initialized SD card manager
-    WebServerManager(SDCardManager* sdManager, ConfigManager* configManager);
+    WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue);
 
     // Destroy and clean up allocated resources of the Web Server Manager
     ~WebServerManager();
@@ -70,5 +70,8 @@ public:
     // true = events have been initialized
     bool isEventsInitialized();
 
+    // Send a command to the CNC task
     void sendCommand(CommandType type, float param1 = 0.0f, float param2 = 0.0f, float param3 = 0.0f);
+
+    void sendEvent(const char* event, const char* data);
 };

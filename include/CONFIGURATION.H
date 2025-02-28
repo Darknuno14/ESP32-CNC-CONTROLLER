@@ -40,7 +40,23 @@ constexpr uint8_t CONTROLTASK_PRIORITY {1}; // The priority at which the task sh
 constexpr uint8_t CNCTASK_PRIORITY {1};
 constexpr BaseType_t CORE_0 {0};
 constexpr BaseType_t CORE_1 {1}; 
-
+// ============================================================================
+// DEFAULT VALUES
+constexpr float X_STEPS_PER_MM {200.0f};
+constexpr float Y_STEPS_PER_MM {200.0f};
+constexpr float X_RAPID_FEEDRATE {3000.0f};
+constexpr float X_RAPID_ACCELERATION {3000.0f};
+constexpr float Y_RAPID_FEEDRATE {3000.0f};
+constexpr float Y_RAPID_ACCELERATION {3000.0f};
+constexpr float X_WORK_FEEDRATE {1000.0f};
+constexpr float X_WORK_ACCELERATION {1000.0f};
+constexpr float Y_WORK_FEEDRATE {1000.0f};
+constexpr float Y_WORK_ACCELERATION {1000.0f};
+constexpr bool USE_GCODE_FEEDRATE {true};
+constexpr int DELAY_AFTER_STARTUP {1000};
+constexpr bool DEACTIVATE_ESTOP {false};
+constexpr bool DEACTIVATE_LIMIT_SWITCHES {false};
+constexpr uint8_t LIMIT_SWITCH_TYPE {0};
 // ============================================================================
 constexpr int JSON_DOC_SIZE {1024};
 constexpr long MAX_CONNECTION_TIME {10000}; // 10 seconds 

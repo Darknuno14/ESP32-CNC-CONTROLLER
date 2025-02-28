@@ -25,15 +25,20 @@
 SDCardManager* sdManager{new SDCardManager()};
 ConfigManager* configManager{new ConfigManager(sdManager)};
 
+// Kolejki do komunikacji między zadaniami
+QueueHandle_t stateQueue;   // Od CNC do Control (informacje o stanie)
+QueueHandle_t commandQueue; // Od Control do CNC (komendy sterujące)
+
 /* --FUNCTION PROTOTYPES-- */
 
 void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager, ConfigManager* configManager);
 void connectToWiFi(WiFiManager* wifiManager);
 void startWebServer(WebServerManager* webServerManager);
 float getParameter(const String& line, char param);
-bool processGCodeLine(String line, MachineState& state, AccelStepper& stepperX, AccelStepper& stepperY);
+bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepperY, MachineState& state, MachineConfig& config);
 uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopCondition, 
     volatile const bool& pauseCondition, AccelStepper& stepperX, AccelStepper& stepperY, MachineState& state);
+void updateOutputs(const MachineState& state);
 
 /*-- Tasks --*/
 
@@ -42,27 +47,84 @@ void taskControl(void * parameter) {
 
     FSManager* fsManager = new FSManager();
     WiFiManager* wifiManager = new WiFiManager();
-    WebServerManager* webServerManager = new WebServerManager(sdManager, configManager); 
+    WebServerManager* webServerManager = new WebServerManager(sdManager, configManager, commandQueue); 
 
     initializeManagers(fsManager, sdManager, wifiManager, webServerManager, configManager);
     connectToWiFi(wifiManager);
     startWebServer(webServerManager);
 
+    // Bufor na przychodzący stan maszyny
+    MachineState currentState;
+
+    // Przechowujemy ostatni stan maszyny
+    MachineState lastState;
+    memset(&lastState, 0, sizeof(MachineState));
+
     unsigned long lastWebUpdateTime = 0;
     constexpr unsigned long WEB_UPDATE_INTERVAL = 200; // ms
     
     while (true) {
+        // 1. Odbieranie statusu maszyny z kolejki
+        if (xQueueReceive(stateQueue, &currentState, 0) == pdTRUE) {
+            #ifdef DEBUG_CONTROL_TASK
+                Serial.printf("STATUS: Received machine state. Position: X=%.2f, Y=%.2f, State=%d\n", 
+                    currentState.currentX, currentState.currentY, (int)currentState.state);
+            #endif
+            
+            // Zapamiętaj ostatni stan
+            memcpy(&lastState, &currentState, sizeof(MachineState));
+            
+            // Wysyłaj aktualizacje przez EventSource jeśli jest istotna zmiana lub minął interwał
+            if (millis() - lastWebUpdateTime > WEB_UPDATE_INTERVAL || 
+                currentState.state != lastState.state || 
+                fabs(currentState.jobProgress - lastState.jobProgress) > 0.5) {
+                
+                // Generuj dane JSON
+                char buffer[256];
+                snprintf(buffer, sizeof(buffer), 
+                    "{\"state\":%d,\"currentX\":%.3f,\"currentY\":%.3f,\"spindleOn\":%s,\"fanOn\":%s,"
+                    "\"jobProgress\":%.1f,\"currentLine\":%d,\"currentProject\":\"%s\",\"jobRunTime\":%lu,\"isPaused\":%s}",
+                    (int)currentState.state, 
+                    currentState.currentX, currentState.currentY,
+                    currentState.hotWireOn ? "true" : "false", 
+                    currentState.fanOn ? "true" : "false",
+                    currentState.jobProgress,
+                    currentState.currentLine,
+                    currentState.currentProject.c_str(),
+                    currentState.jobRunTime,
+                    currentState.isPaused ? "true" : "false");
+                
+                // Wyślij zdarzenie do klientów webowych
+                webServerManager->sendEvent("machine-status", buffer);
+                
+                lastWebUpdateTime = millis();
+            }
+        }
+                        
         vTaskDelay(pdMS_TO_TICKS(10)); // delay to prevent watchdog timeouts
     }
 }
+
  
 void taskCNC(void * parameter) {
     Serial.printf("STATUS: Task2 started on core %d\n", xPortGetCoreID());
 
-    CNCState currentState {CNCState::IDLE};
+    MachineState state {};
+    state.state = CNCState::IDLE;
+    state.relativeMode = false;
+    state.isPaused = false;
+    state.hotWireOn = false;
+    state.fanOn = false;
+    state.currentX = 0.0f;
+    state.currentY = 0.0f;
+    state.jobProgress = 0.0f;
+    state.currentLine = 0;
+    state.jobStartTime = 0;
+    state.jobRunTime = 0;
+    state.hasError = false;
+    state.errorCode = 0;
 
-    bool projectReady {false}; // Czy projekt jest wybrany
-    std::string projectName {""}; // Nazwa wybranego projektu
+    bool processingStopped = false;
 
     unsigned long lastStatusUpdateTime {0}; // Ostatnia aktualizacja statusu
     constexpr unsigned long STATUS_UPDATE_INTERVAL {500}; // Interwał aktualizacji statusu (500ms)
@@ -86,6 +148,10 @@ void setup() {
 
     pinMode(CONFIG::WIRE_RELAY_PIN, OUTPUT); digitalWrite(CONFIG::WIRE_RELAY_PIN, LOW);
     pinMode(CONFIG::FAN_RELAY_PIN, OUTPUT); digitalWrite(CONFIG::FAN_RELAY_PIN, LOW);
+
+    // Inicjalizacja kolejek do komunikacji między zadaniami
+    stateQueue = xQueueCreate(5, sizeof(MachineState));
+    commandQueue = xQueueCreate(10, sizeof(WebserverCommand));
 
     xTaskCreatePinnedToCore(taskControl,  // Task function
                             "Control",  // Task name
@@ -111,11 +177,11 @@ void loop() {}
 
 void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager, ConfigManager* configManager) {
     
-    FSManagerStatus fsManagerStatus = fsManager->init();
-    SDManagerStatus sdManagerStatus = sdManager->init();
-    WiFiManagerStatus wifiManagerStatus = wifiManager->init();
-    WebServerStatus webServerManagerStatus = webServerManager->init();
-    ConfigManagerStatus configManagerStatus = configManager->init();
+    FSManagerStatus fsManagerStatus {fsManager->init()};
+    SDManagerStatus sdManagerStatus {sdManager->init()};
+    WiFiManagerStatus wifiManagerStatus {wifiManager->init()};
+    WebServerStatus webServerManagerStatus {webServerManager->init()};
+    ConfigManagerStatus configManagerStatus {webServerManagerStatus == WebServerStatus::OK ? configManager->init() : ConfigManagerStatus::SD_ACCESS_ERROR};
 
     #ifdef DEBUG_CONTROL_TASK
         switch(fsManagerStatus) {
@@ -211,15 +277,15 @@ void startWebServer(WebServerManager* webServerManager) {
 }
 
 float getParameter(const String& line, char param) {
-    int index {line.indexOf(param)};
+    int index = line.indexOf(param);
     if (index == -1) return NAN;
     
     // Wyznaczanie początku tesktu z parametrem
-    int valueStart {index + 1};
-    int valueEnd {line.length()};
+    int valueStart = index + 1;
+    int valueEnd = static_cast<int>(line.length());
     
     // Wyznaczanie końca tekstu z parametrem (następna spacja lub koniec linii)
-    for (int i{valueStart}; i < line.length(); ++i) {
+    for (int i = valueStart; i < static_cast<int>(line.length()); ++i) {
         if (line[i] == ' ' || line[i] == '\t') {
             valueEnd = i;
             break;
@@ -229,17 +295,224 @@ float getParameter(const String& line, char param) {
     return line.substring(valueStart, valueEnd).toFloat();
 }
 
-bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepperY, MachineState& state) {
+bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepperY, MachineState& state, MachineConfig& config) {
     #ifdef DEBUG_CNC_TASK
         Serial.printf("DEBUG CNC GCODE: Processing: %s\n", line.c_str());
     #endif
+    
+    // Usuwanie białcyh znaków i pustych linii
+    line.trim();
+    if (line.length() == 0) return true;
+    
+    // Usuwanie komentarzy
+    int commentIndex {line.indexOf(';')};
+    if (commentIndex != -1) {
+        line = line.substring(0, commentIndex);
+        line.trim();
+        if (line.length() == 0) return true;
+    }
+    
+    // Wyodrębnienie polecenia
+    int spaceIndex {line.indexOf(' ')};
+    String command {(spaceIndex != -1) ? line.substring(0, spaceIndex) : line};
+    command.toUpperCase();  // Ujednolicenie wielkości liter
+    
+    if (command.startsWith("G")) {
+        int gCode {command.substring(1).toInt()};
+        
+        switch (gCode) {
+            case 0:  // G0: Szybki ruch
+            case 1:  // G1: Ruch liniowy
+                {
+                    float targetX {getParameter(line, 'X')};
+                    float targetY {getParameter(line, 'Y')};
+                    float feedRate {getParameter(line, 'F')};
+                                
+                    // Oblicz nowe pozycje
+                    float newX {isnan(targetX) ? state.currentX : 
+                                (state.relativeMode ? state.currentX + targetX : targetX)};
+                    float newY {isnan(targetY) ? state.currentY : 
+                                (state.relativeMode ? state.currentY + targetY : targetY)};
+                    
+                    // Oblicz prędkość ruchu w zależności od komendy ruchu
+                    float moveSpeedX {(gCode == 0) ? config.xAxis.rapidFeedRate : 
+                                     (config.useGCodeFeedRate && !isnan(feedRate)) ? 
+                                     min(feedRate, config.xAxis.workFeedRate) : config.xAxis.workFeedRate};
+                    float moveSpeedY {(gCode == 0) ? config.yAxis.rapidFeedRate : 
+                                     (config.useGCodeFeedRate && !isnan(feedRate)) ? 
+                                     min(feedRate, config.yAxis.workFeedRate) : config.yAxis.workFeedRate};
+                    
+                    // Oblicz ruch w krokach
+                    long targetStepsX {static_cast<long>(newX * config.xAxis.stepsPerMM)};
+                    long targetStepsY {static_cast<long>(newY * config.yAxis.stepsPerMM)};
+                    
+                    #ifdef DEBUG_CNC_TASK
+                        Serial.printf("DEBUG CNC MOVE: X%.3f Y%.3f Vx%.3f Vy%.3f \n", newX, newY, moveSpeedX, moveSpeedY);
+                    #endif
+                    
+                    // Prędkości silników
+                    float stepsXPerSec {moveSpeedX / 60.0f * config.xAxis.stepsPerMM}; // 60.0f - przelicznik na sekundy
+                    float stepsYPerSec {moveSpeedY / 60.0f * config.yAxis.stepsPerMM};
+                    stepperX.setMaxSpeed(stepsXPerSec);
+                    stepperY.setMaxSpeed(stepsYPerSec);
+                    
+                    // Przyspieszenie - tymczasowo jako dwukrotna prędkość
+                    stepperX.setAcceleration(config.xAxis.rapidAcceleration * config.xAxis.stepsPerMM);
+                    stepperY.setAcceleration(config.yAxis.rapidAcceleration * config.yAxis.stepsPerMM);
+                    
+                    // Ustaw pozycje docelowe
+                    stepperX.moveTo(targetStepsX);
+                    stepperY.moveTo(targetStepsY);
+                    
+                    // Wykonanie ruchu bez blokowania
+                    bool moving {true};
+                    unsigned long lastProgressUpdate {millis()};
+                    
+                    while (moving) {
+                        // Sprawdź, czy nie ma polecenia zatrzymania
+                        WebserverCommand cmd;
+                        if (xQueuePeek(commandQueue, &cmd, 0) == pdTRUE) {
+                            if (cmd.type == CommandType::STOP) {
+                                // Zatrzymaj ruch silników
+                                stepperX.stop();
+                                stepperY.stop();
+                                
+                                // Usuń komendę z kolejki
+                                xQueueReceive(commandQueue, &cmd, 0);
+                                return false; // Przerwij przetwarzanie
+                            }
+                        }
+                        
+                        // Uruchom silniki
+                        stepperX.run();
+                        stepperY.run();
+                        
+                        // Sprawdź czy ruch jest zakończony
+                        if (stepperX.distanceToGo() == 0 && stepperY.distanceToGo() == 0) {
+                            moving = false;
+                        }
+                        
+                        // Raportuj postęp co 100ms
+                        if (millis() - lastProgressUpdate > 100) {
+                            state.currentX = stepperX.currentPosition() / config.xAxis.stepsPerMM;
+                            state.currentY = stepperY.currentPosition() / config.yAxis.stepsPerMM;
+                            xQueueSend(stateQueue, &state, 0);
+                            lastProgressUpdate = millis();
+                        }
+                        
+                        vTaskDelay(10);
+                    }
+                    
+                    // Zaktualizuj obecną pozycję
+                    state.currentX = newX;
+                    state.currentY = newY; 
+                }
+                break;
+                
+            case 28:  // G28: Bazowanie
+                #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC HOME: Homing X and Y axes");
+                #endif
+                
+                // Resetuj pozycję
+                stepperX.setCurrentPosition(0);
+                stepperY.setCurrentPosition(0);
+                state.currentX = 0;
+                state.currentY = 0;
+                break;
+                
+            case 90:  // G90: Pozycjonowanie absolutne
+                state.relativeMode = false;
+                #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC MODE: Absolute positioning");
+                #endif
+                break;
+                
+            case 91:  // G91: Pozycjonowanie względne
+                state.relativeMode = true;
+                #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC MODE: Relative positioning");
+                #endif
+                break;
+                
+            default:
+                #ifdef DEBUG_CNC_TASK
+                    Serial.printf("WARNING: Unsupported G-code: G%d\n", gCode);
+                #endif
+                break;
+        }
+    } 
+    else if (command.startsWith("M")) {
+        int mCode = command.substring(1).toInt();
+        
+        switch (mCode) {
+            case 0:  // M0: Pauza programu
+            case 1:  // M1: Opcjonalna pauza programu
+                #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC PAUSE: Program paused, waiting for resume");
+                #endif
+                state.isPaused = true;
+                
+                // Czekaj na wznowienie poprzez komendę z kolejki
+                while (state.isPaused) {
+                    // Sprawdź, czy nie ma polecenia wznowienia lub zatrzymania
+                    WebserverCommand cmd;
+                    if (xQueuePeek(commandQueue, &cmd, 0) == pdTRUE) {
+                        if (cmd.type == CommandType::PAUSE) {
+                            state.isPaused = false;
+                            xQueueReceive(commandQueue, &cmd, 0); // Usuń komendę z kolejki
+                        } else if (cmd.type == CommandType::STOP) {
+                            xQueueReceive(commandQueue, &cmd, 0); // Usuń komendę z kolejki
+                            return false; // Przerwij przetwarzanie
+                        }
+                    }
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
+                break;
+                
+            case 3:  // M3: Włączenie wrzeciona/drutu
+                #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC WIRE: Wire ON");
+                #endif
+                state.hotWireOn = true;
+                updateOutputs(state);
+                break;
+                
+            case 5:  // M5: Wyłączenie wrzeciona/drutu
+                #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC WIRE: Wire OFF");
+                #endif
+                state.hotWireOn = false;
+                updateOutputs(state);
+                break;
+                
+            default:
+                #ifdef DEBUG_CNC_TASK
+                    Serial.printf("WARNING: Unsupported M-code: M%d\n", mCode);
+                #endif
+                break;
+        }
+    }
+    else {
+        #ifdef DEBUG_CNC_TASK
+            Serial.printf("WARNING: Unrecognized command: %s\n", command.c_str());
+        #endif
+        return false;
+    }
+    
+    return true;
+}
+
+void updateOutputs(MachineState& state) {
+    digitalWrite(CONFIG::WIRE_RELAY_PIN, state.hotWireOn ? HIGH : LOW);
+    digitalWrite(CONFIG::FAN_RELAY_PIN, state.fanOn ? HIGH : LOW);
 }
 
 uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopCondition, 
     volatile const bool& pauseCondition, AccelStepper& stepperX, AccelStepper& stepperY, MachineState& state) {
-    #ifdef DEBUG_CNC_TASK
+        #ifdef DEBUG_CNC_TASK
         Serial.println("DEBUG CNC STATUS: Starting to process file");
-    #endif
+        #endif
    
     // Przejęcie dostępu do karty SD
     if (!sdManager->takeSD()) {
@@ -248,7 +521,29 @@ uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopC
         #endif
         return 2; // Błąd: nie można zablokować karty SD
     }
-    
+
+    // Pobranie konfiguracji
+    MachineConfig config;
+    if (configManager->isConfigLoaded()) {
+        config = configManager->getConfig();
+    } else {
+        // Domyślne wartości jeśli konfiguracja nie jest dostępna
+        config.xAxis.stepsPerMM = CONFIG::X_STEPS_PER_MM;
+        config.yAxis.stepsPerMM = CONFIG::Y_STEPS_PER_MM;
+        config.xAxis.rapidFeedRate = CONFIG::X_RAPID_FEEDRATE;
+        config.xAxis.rapidAcceleration = CONFIG::X_RAPID_ACCELERATION;
+        config.yAxis.rapidFeedRate = CONFIG::Y_RAPID_FEEDRATE;
+        config.yAxis.rapidAcceleration = CONFIG::Y_RAPID_ACCELERATION;
+        config.xAxis.workFeedRate = CONFIG::X_WORK_FEEDRATE;
+        config.xAxis.workAcceleration = CONFIG::X_WORK_ACCELERATION;
+        config.yAxis.workFeedRate = CONFIG::Y_WORK_FEEDRATE;
+        config.yAxis.workAcceleration = CONFIG::Y_WORK_ACCELERATION;
+        config.useGCodeFeedRate = CONFIG::USE_GCODE_FEEDRATE;
+        config.deactivateESTOP = CONFIG::DEACTIVATE_ESTOP;
+        config.deactivateLimitSwitches = CONFIG::DEACTIVATE_LIMIT_SWITCHES;
+        config.limitSwitchType = CONFIG::LIMIT_SWITCH_TYPE;
+    }
+        
     // Otwarcie pliku
     std::string filePath {CONFIG::PROJECTS_DIR + filename};
     File file {SD.open(filePath.c_str())};
@@ -285,7 +580,7 @@ uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopC
         #endif
         
         // Przetwarzanie linii
-        if (!processGCodeLine(line, stepperX, stepperY, state)) {
+        if (!processGCodeLine(line, stepperX, stepperY, state, config)) {
             #ifdef DEBUG_CNC_TASK
                 Serial.printf("DEBUG CNC ERROR: Błąd przetwarzania linii %d\n", lineNumber);
             #endif

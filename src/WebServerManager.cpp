@@ -7,9 +7,8 @@
 #include "WebServerManager.h"
 #include "CONFIGURATION.H"
 
-WebServerManager::WebServerManager(SDCardManager* sdManager, ConfigManager* configManager) 
-    : sdManager(sdManager), configManager(configManager), server(nullptr), events(nullptr) {
-        commandQueue = xQueueCreate(10, sizeof(WebserverCommand));    
+WebServerManager::WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue) 
+    : sdManager(sdManager), configManager(configManager), commandQueue(extCommandQueue) {
 }
 
 WebServerManager::~WebServerManager() {
@@ -24,11 +23,6 @@ WebServerManager::~WebServerManager() {
         serverStarted = false;
         delete server;
         server = nullptr; 
-    }
-
-    if (commandQueue) {
-        vQueueDelete(commandQueue);
-        commandQueue = nullptr;
     }
 }
 
@@ -55,6 +49,15 @@ WebServerStatus WebServerManager::init() {
         } 
         this->eventsInitialized = true;
     }
+
+    events->onConnect([](AsyncEventSourceClient *client) {
+        if (client->lastId()) {
+            Serial.printf("Client reconnected! Last message ID: %u\n", client->lastId());
+        }
+        
+        // Wyślij początkowe info o połączeniu
+        client->send("Connected to ESP32 CNC EventSource", NULL, millis(), 1000);
+    });
 
     return WebServerStatus::OK;
 }
@@ -204,9 +207,44 @@ void WebServerManager::setupIndexRoutes() {
             Serial.println("DEBUG SERVER STATUS: Machine status requested");
         #endif
         
-        /** @todo ZAIMPLEMENTOWAĆ **/
+        static MachineState lastKnownState;
+        static unsigned long lastStateUpdate = 0;
         
-        request->send(200);
+        // Przygotowanie JSON z danymi
+        DynamicJsonDocument doc(CONFIG::JSON_DOC_SIZE);
+        
+        // Stan maszyny
+        doc["state"] = static_cast<int>(lastKnownState.state);
+        doc["isPaused"] = lastKnownState.isPaused;
+        doc["hasError"] = lastKnownState.hasError;
+        doc["errorCode"] = lastKnownState.errorCode;
+        
+        // Pozycja
+        doc["currentX"] = lastKnownState.currentX;
+        doc["currentY"] = lastKnownState.currentY;
+        doc["relativeMode"] = lastKnownState.relativeMode;
+        
+        // Stan urządzeń
+        doc["hotWireOn"] = lastKnownState.hotWireOn;
+        doc["fanOn"] = lastKnownState.fanOn;
+        
+        // Informacje o zadaniu
+        if (lastKnownState.currentProject.length() > 0) {
+            doc["currentProject"] = lastKnownState.currentProject;
+        } else {
+            doc["currentProject"] = "";
+        }
+        doc["jobProgress"] = lastKnownState.jobProgress;
+        doc["currentLine"] = lastKnownState.currentLine;
+        doc["jobStartTime"] = lastKnownState.jobStartTime;
+        doc["jobRunTime"] = lastKnownState.jobRunTime;
+        
+        // Konwersja JSON na string
+        String jsonString;
+        serializeJson(doc, jsonString);
+        
+        // Wysłanie odpowiedzi
+        request->send(200, "application/json", jsonString);
     });
 }
 
@@ -419,25 +457,72 @@ void WebServerManager::setupProjectsRoutes() {
             request->send(200, "application/json", json);
         });
 
-        // Reinicjalizacja karty SD
-        server->on("/api/reinitialize-sd", HTTP_POST, [this](AsyncWebServerRequest *request) {
-            #ifdef DEBUG_SERVER_ROUTES
-                Serial.println("DEBUG SERVER STATUS: SD card reinitialization requested");
-            #endif
+// Reinicjalizacja karty SD i ConfigManager
+server->on("/api/reinitialize-sd", HTTP_POST, [this](AsyncWebServerRequest *request) {
+    #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: SD card reinitialization requested");
+    #endif
 
-            SDManagerStatus result = this->sdManager->init();
-            bool success = (result == SDManagerStatus::OK);
+    // Najpierw zainicjalizuj kartę SD
+    SDManagerStatus sdResult = this->sdManager->init();
+    bool sdSuccess = (sdResult == SDManagerStatus::OK);
+    
+    bool configSuccess = false;
+    String message = "";
+    
+    if (sdSuccess) {
+        #ifdef DEBUG_SERVER_ROUTES
+            Serial.println("DEBUG SERVER STATUS: SD card reinitialization successful");
+        #endif
+        
+        // Następnie zainicjalizuj/reinicjalizuj ConfigManager
+        if (this->configManager) {
+            ConfigManagerStatus configResult = this->configManager->init();
+            configSuccess = (configResult == ConfigManagerStatus::OK);
             
-            if (success) {
+            if (configSuccess) {
                 #ifdef DEBUG_SERVER_ROUTES
-                    Serial.println("DEBUG SERVER STATUS: SD card reinitialization successful");
+                    Serial.println("DEBUG SERVER STATUS: Config manager reinitialized successfully");
                 #endif
-                this->sdManager->updateProjectList();
+                message = "SD card and configuration reinitialized successfully";
+            } else {
+                #ifdef DEBUG_SERVER_ROUTES
+                    Serial.println("DEBUG SERVER WARNING: Config manager reinitialization failed");
+                #endif
+                message = "SD card reinitialized, but configuration failed";
             }
-
-            String json = "{\"success\":" + String(success ? "true" : "false") + "}";
-            request->send(200, "application/json", json);
-        });
+        } else {
+            // Jeśli configManager nie istnieje, stwórz nowy
+            #ifdef DEBUG_SERVER_ROUTES
+                Serial.println("DEBUG SERVER WARNING: Creating new Config manager");
+            #endif
+            this->configManager = new ConfigManager(this->sdManager);
+            ConfigManagerStatus configResult = this->configManager->init();
+            configSuccess = (configResult == ConfigManagerStatus::OK);
+            
+            if (configSuccess) {
+                message = "SD card reinitialized and new configuration manager created";
+            } else {
+                message = "SD card reinitialized, but failed to create configuration manager";
+            }
+        }
+        
+        // Zaktualizuj listę projektów
+        this->sdManager->updateProjectList();
+    } else {
+        message = "Failed to reinitialize SD card";
+    }
+    
+    // Odpowiedź JSON ze szczegółowymi informacjami
+    DynamicJsonDocument doc(256);
+    doc["success"] = sdSuccess;
+    doc["configSuccess"] = configSuccess;
+    doc["message"] = message;
+    
+    String jsonResponse;
+    serializeJson(doc, jsonResponse);
+    request->send(200, "application/json", jsonResponse);
+});
 
         // Usuwanie plików
         server->on("/api/delete-file", HTTP_POST, [this](AsyncWebServerRequest *request) {
@@ -474,7 +559,6 @@ void WebServerManager::setupProjectsRoutes() {
 
 }
 
-
 bool WebServerManager::isServerStarted() {
     return serverStarted;
 }
@@ -487,7 +571,7 @@ bool WebServerManager::isServerInitialized() {
     return serverInitialized;
 }
 
-void WebServerManager::sendCommand(CommandType type, float param1 = 0.0f, float param2 = 0.0f, float param3 = 0.0f) {
+void WebServerManager::sendCommand(CommandType type, float param1, float param2, float param3) {
     if (commandQueue) {
         WebserverCommand cmd {};
         cmd.type = type;
@@ -501,6 +585,12 @@ void WebServerManager::sendCommand(CommandType type, float param1 = 0.0f, float 
             Serial.printf("DEBUG SERVER: Wysłano komendę typu %d z parametrami: %.2f, %.2f, %.2f\n", 
                          static_cast<int>(type), param1, param2, param3);
         #endif
+    }
+}
+
+void WebServerManager::sendEvent(const char* event, const char* data) {
+    if (events && eventsInitialized) {
+        events->send(data, event, millis());
     }
 }
 
