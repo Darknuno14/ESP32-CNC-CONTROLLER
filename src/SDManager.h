@@ -4,7 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-enum class SDMenagerStatus {
+enum class SDManagerStatus {
     OK,
     INIT_FAILED,
     DIRECTORY_CREATE_FAILED,
@@ -12,65 +12,68 @@ enum class SDMenagerStatus {
     MUTEX_CREATE_FAILED,
     FILE_OPEN_FAILED,
     CARD_NOT_INITIALIZED,
+    SD_BUSY,
+    FILE_NOT_FOUND,
     UNKNOWN_ERROR  
 };
 
- // Manages the SD card, which acts as a storage medium for project files and parameters.
- // Provides a mutex for synchronizing access to the card.
+// Klasa zarządza kartą SD, która służy jako miejsce przechowywania dla plików projektów i konfiguracji.
 class SDCardManager {
 private:
-    // Track card initialization status
-    bool cardInitialized{false};
+    // Śledzi stan inicjalizacji karty
+    bool cardInitialized {false};
 
-    // Create the Projects directory on the SD card
-    // true = directory creation was successful
-    bool createProjectsDirectory(); 
+    // Tworzy katalog na karcie SD
+    // true = tworzenie katalogu powiodło się
+    bool createDirectory(const std::string& path);
 
-    // Store project files names
-    std::vector<std::string> projectFiles;  
+    // Przechowuje nazwy plików projektów
+    std::vector<std::string> projectFiles {};  
 
-    // Mutex for SD card access
-    SemaphoreHandle_t sdMutex{};
+    // Mutex dla dostępu do karty SD
+    SemaphoreHandle_t sdMutex {};
 
-    // Track if a project is selected
-    bool projectIsSelected{false};
+    // Śledzi, czy projekt jest wybrany
+    bool projectIsSelected {false};
     
-    // Store the selected project filename 
-    std::string selectedProject{};
+    // Nazwa pliku z wybranym projektem 
+    std::string selectedProject {};
 
 public:
 
-    // Default constructor for SDCardManager
+    // Domyślny konstruktor dla SDCardManager
     SDCardManager() = default;
 
-    // Initialize the SD card
-    SDMenagerStatus init();
+    // Inicjalizacja menadżera karty SD
+    SDManagerStatus init();
 
-    // Check if the SD card is initialized
-    bool isCardInitialized() const;
-
-    //Update the project files vector
-    SDMenagerStatus listProjectFiles();
-    
-    //Get the Project Files vector
-    std::vector<std::string> getProjectFiles() const;
-
-    // Take the SD card for exclusive access
+    // Zajmuje kartę SD dla wyłącznego dostępu
     bool takeSD();
 
-    // Give the SD card back for other tasks to use
+    // Zwalnia kartę SD, aby inne zadania mogły z niej korzystać
     void giveSD();
+    
+    // Sprawdzenie czy menadżer jest zainicjalizowany
+    // true = karta SD jest zainicjalizowana
+    bool isCardInitialized() const;
 
-    // Check if a project is selected
+    // Wczytanie listy plików projektów
+    SDManagerStatus updateProjectList();
+    
+    // Get the Project Files vector
+    SDManagerStatus getProjectFiles(std::vector<std::string>& projectList);
+
+    // Sprawdzenie czy projekt jest wybrany
+    // true = projekt jest wybrany
     bool isProjectSelected() const;
 
-    // Get the selected project filename
-    const std::string& getSelectedProject();
+    // Zwraca nazwę pliku wybranego projektu
+    SDManagerStatus getSelectedProject(std::string& projectName);
 
-    // Set the selected project filename
-    void setSelectedProject(const std::string& filename);
+    // Ustawia nazwę pliku wybranego projektu
+    SDManagerStatus  setSelectedProject(const std::string& filename);
 
-    // Clear the selected project filename
+    // Czyści nazwę pliku wybranego projektu
     void clearSelectedProject();
 };
 

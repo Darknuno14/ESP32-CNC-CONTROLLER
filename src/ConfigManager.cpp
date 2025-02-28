@@ -3,18 +3,11 @@
 #include <ArduinoJson.h>
 #include "CONFIGURATION.H"
 
-ConfigManager::ConfigManager(SDCardManager* sdManager, const std::string& configPath) 
-    : sdManager(sdManager), configFilePath(configPath), configLoaded(false) {
-    
-    // Utwórz mutex dla bezpiecznego dostępu do konfiguracji
+ConfigManager::ConfigManager(SDCardManager* sdManager) {
     configMutex = xSemaphoreCreateMutex();
-    
-    // Ustaw domyślną konfigurację
-    setDefaultConfig();
 }
 
 ConfigManager::~ConfigManager() {
-    // Zwolnij mutex, jeśli został utworzony
     if (configMutex != nullptr) {
         vSemaphoreDelete(configMutex);
         configMutex = nullptr;
@@ -22,43 +15,19 @@ ConfigManager::~ConfigManager() {
 }
 
 ConfigManagerStatus ConfigManager::init() {
-    // Sprawdź, czy SD Manager jest zainicjalizowany
     if (!sdManager || !sdManager->isCardInitialized()) {
         return ConfigManagerStatus::SD_ACCESS_ERROR;
     }
-    
-    // Spróbuj załadować konfigurację
+
     ConfigManagerStatus status = loadConfig();
-    
-    // Jeśli nie udało się załadować, użyj domyślnej konfiguracji
-    if (status != ConfigManagerStatus::OK) {
-        #ifdef DEBUG_CONFIG_MANAGER
-            Serial.println("DEBUG CONFIG: Could not load configuration, using defaults");
-        #endif
-        
-        setDefaultConfig();
-        
-        // Spróbuj utworzyć katalog konfiguracji, jeśli nie istnieje
-        std::string configDir = configFilePath.substr(0, configFilePath.find_last_of('/'));
-        if (sdManager->takeSD()) {
-            if (!SD.exists(configDir.c_str())) {
-                SD.mkdir(configDir.c_str());
-            }
-            sdManager->giveSD();
-        }
-        
-        // Zapisz domyślną konfigurację
-        status = saveConfig();
-        if (status != ConfigManagerStatus::OK) {
-            #ifdef DEBUG_CONFIG_MANAGER
-                Serial.println("DEBUG CONFIG: Could not save default configuration");
-            #endif
-            return status;
-        }
+    if (status == ConfigManagerStatus::OK) {
+        configLoaded = true;
+        return ConfigManagerStatus::OK;
     }
-    
-    configLoaded = true;
-    return ConfigManagerStatus::OK;
+    else {
+        return status;
+    }
+
 }
 
 ConfigManagerStatus ConfigManager::loadConfig() {
@@ -66,20 +35,20 @@ ConfigManagerStatus ConfigManager::loadConfig() {
         return ConfigManagerStatus::SD_ACCESS_ERROR;
     }
     
-    // Sprawdź, czy plik istnieje
+    std::string configFilePath {CONFIG::CONFIG_DIR};
+    configFilePath += CONFIG::CONFIG_FILE;
+
     if (!SD.exists(configFilePath.c_str())) {
         sdManager->giveSD();
         return ConfigManagerStatus::FILE_OPEN_FAILED;
     }
     
-    // Otwórz plik
-    File configFile = SD.open(configFilePath.c_str(), FILE_READ);
+    File configFile {SD.open(CONFIG::CONFIG_DIR, FILE_READ)};
     if (!configFile) {
         sdManager->giveSD();
         return ConfigManagerStatus::FILE_OPEN_FAILED;
     }
-    
-    // Odczytaj zawartość pliku
+
     String jsonString = "";
     while (configFile.available()) {
         jsonString += (char)configFile.read();
@@ -87,7 +56,6 @@ ConfigManagerStatus ConfigManager::loadConfig() {
     configFile.close();
     sdManager->giveSD();
     
-    // Parsuj JSON
     return configFromJson(jsonString);
 }
 
@@ -96,17 +64,17 @@ ConfigManagerStatus ConfigManager::saveConfig() {
         return ConfigManagerStatus::SD_ACCESS_ERROR;
     }
     
-    // Otwórz plik do zapisu (nadpisując istniejący)
-    File configFile = SD.open(configFilePath.c_str(), FILE_WRITE);
+    std::string configFilePath {CONFIG::CONFIG_DIR};
+    configFilePath += CONFIG::CONFIG_FILE;
+
+    File configFile {SD.open(configFilePath.c_str(), FILE_WRITE)};
     if (!configFile) {
         sdManager->giveSD();
         return ConfigManagerStatus::FILE_OPEN_FAILED;
     }
+
+    String jsonString {configToJson()};
     
-    // Serializuj konfigurację do JSON
-    String jsonString = configToJson();
-    
-    // Zapisz do pliku
     if (configFile.print(jsonString) == 0) {
         configFile.close();
         sdManager->giveSD();
@@ -118,23 +86,15 @@ ConfigManagerStatus ConfigManager::saveConfig() {
     return ConfigManagerStatus::OK;
 }
 
-void ConfigManager::setDefaultConfig() {
-    if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        // Ustaw domyślne wartości (przykładowe, dostosuj do swoich potrzeb)
-        config = MachineConfig();
-        xSemaphoreGive(configMutex);
-    }
-}
-
 MachineConfig ConfigManager::getConfig() {
-    MachineConfig result;
+    MachineConfig configcpy {};
     
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        result = config;
+        configcpy = config;
         xSemaphoreGive(configMutex);
     }
     
-    return result;
+    return configcpy;
 }
 
 ConfigManagerStatus ConfigManager::setConfig(const MachineConfig& newConfig) {
@@ -142,7 +102,6 @@ ConfigManagerStatus ConfigManager::setConfig(const MachineConfig& newConfig) {
         config = newConfig;
         xSemaphoreGive(configMutex);
         
-        // Zapisz nową konfigurację na karcie SD
         return saveConfig();
     }
     
@@ -150,34 +109,31 @@ ConfigManagerStatus ConfigManager::setConfig(const MachineConfig& newConfig) {
 }
 
 String ConfigManager::configToJson() {
-    // Utwórz dokument JSON
-    DynamicJsonDocument doc(1024); // Rozmiar dostosuj do potrzeb
-    
+    DynamicJsonDocument doc(CONFIG::JSON_DOC_SIZE);
+   
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        // Silnik X
+        // Parametry osi X
         JsonObject xAxis = doc.createNestedObject("xAxis");
         xAxis["stepsPerMM"] = config.xAxis.stepsPerMM;
-        xAxis["maxFeedRate"] = config.xAxis.maxFeedRate;
-        xAxis["maxAcceleration"] = config.xAxis.maxAcceleration;
+        xAxis["workFeedRate"] = config.xAxis.workFeedRate;
+        xAxis["workAcceleration"] = config.xAxis.workAcceleration;
         xAxis["rapidFeedRate"] = config.xAxis.rapidFeedRate;
         xAxis["rapidAcceleration"] = config.xAxis.rapidAcceleration;
         
-        // Silnik Y
+        // Parametry osi Y
         JsonObject yAxis = doc.createNestedObject("yAxis");
         yAxis["stepsPerMM"] = config.yAxis.stepsPerMM;
-        yAxis["maxFeedRate"] = config.yAxis.maxFeedRate;
-        yAxis["maxAcceleration"] = config.yAxis.maxAcceleration;
+        yAxis["workFeedRate"] = config.yAxis.workFeedRate;
+        yAxis["workAcceleration"] = config.yAxis.workAcceleration;
         yAxis["rapidFeedRate"] = config.yAxis.rapidFeedRate;
         yAxis["rapidAcceleration"] = config.yAxis.rapidAcceleration;
         
-        // Parametry operacyjne
+        // Pozostałe parametry
         doc["useGCodeFeedRate"] = config.useGCodeFeedRate;
         doc["delayAfterStartup"] = config.delayAfterStartup;
-        
-        // Inne parametry
-        doc["wireTemperature"] = config.wireTemperature;
-        doc["enableFan"] = config.enableFan;
-        doc["fanSpeed"] = config.fanSpeed;
+        doc["deactivateESTOP"] = config.deactivateESTOP;
+        doc["deactivateLimitSwitches"] = config.deactivateLimitSwitches;
+        doc["limitSwitchType"] = config.limitSwitchType;
         
         xSemaphoreGive(configMutex);
     }
@@ -189,68 +145,81 @@ String ConfigManager::configToJson() {
 }
 
 ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
-    // Utwórz dokument JSON
-    DynamicJsonDocument doc(1024); // Rozmiar dostosuj do potrzeb
+    DynamicJsonDocument doc(CONFIG::JSON_DOC_SIZE);
     
-    // Parsuj JSON
     DeserializationError error = deserializeJson(doc, jsonString);
     if (error) {
+        #ifdef DEBUG_CONFIG_MANAGER
+            Serial.print("DEBUG CONFIG: JSON parse error: ");
+            Serial.println(error.c_str());
+        #endif
         return ConfigManagerStatus::JSON_PARSE_ERROR;
     }
     
-    // Odczytaj wartości, z zabezpieczeniem mutexem
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        // Silnik X
+        // Parametry dla osi X
         if (doc.containsKey("xAxis")) {
             JsonObject xAxis = doc["xAxis"];
-            config.xAxis.stepsPerMM = xAxis["stepsPerMM"] | config.xAxis.stepsPerMM;
-            config.xAxis.maxFeedRate = xAxis["maxFeedRate"] | config.xAxis.maxFeedRate;
-            config.xAxis.maxAcceleration = xAxis["maxAcceleration"] | config.xAxis.maxAcceleration;
-            config.xAxis.rapidFeedRate = xAxis["rapidFeedRate"] | config.xAxis.rapidFeedRate;
-            config.xAxis.rapidAcceleration = xAxis["rapidAcceleration"] | config.xAxis.rapidAcceleration;
+            if (xAxis.containsKey("stepsPerMM")) config.xAxis.stepsPerMM = xAxis["stepsPerMM"].as<float>();
+            if (xAxis.containsKey("workFeedRate")) config.xAxis.workFeedRate = xAxis["workFeedRate"].as<float>();
+            if (xAxis.containsKey("workAcceleration")) config.xAxis.workAcceleration = xAxis["workAcceleration"].as<float>();
+            if (xAxis.containsKey("rapidFeedRate")) config.xAxis.rapidFeedRate = xAxis["rapidFeedRate"].as<float>();
+            if (xAxis.containsKey("rapidAcceleration")) config.xAxis.rapidAcceleration = xAxis["rapidAcceleration"].as<float>();
         }
         
-        // Silnik Y
+        // Parametry dla osi Y
         if (doc.containsKey("yAxis")) {
             JsonObject yAxis = doc["yAxis"];
-            config.yAxis.stepsPerMM = yAxis["stepsPerMM"] | config.yAxis.stepsPerMM;
-            config.yAxis.maxFeedRate = yAxis["maxFeedRate"] | config.yAxis.maxFeedRate;
-            config.yAxis.maxAcceleration = yAxis["maxAcceleration"] | config.yAxis.maxAcceleration;
-            config.yAxis.rapidFeedRate = yAxis["rapidFeedRate"] | config.yAxis.rapidFeedRate;
-            config.yAxis.rapidAcceleration = yAxis["rapidAcceleration"] | config.yAxis.rapidAcceleration;
+            if (yAxis.containsKey("stepsPerMM")) config.yAxis.stepsPerMM = yAxis["stepsPerMM"].as<float>();
+            if (yAxis.containsKey("workFeedRate")) config.yAxis.workFeedRate = yAxis["workFeedRate"].as<float>();
+            if (yAxis.containsKey("workAcceleration")) config.yAxis.workAcceleration = yAxis["workAcceleration"].as<float>();
+            if (yAxis.containsKey("rapidFeedRate")) config.yAxis.rapidFeedRate = yAxis["rapidFeedRate"].as<float>();
+            if (yAxis.containsKey("rapidAcceleration")) config.yAxis.rapidAcceleration = yAxis["rapidAcceleration"].as<float>();
         }
         
-        // Parametry operacyjne
-        config.useGCodeFeedRate = doc["useGCodeFeedRate"] | config.useGCodeFeedRate;
-        config.delayAfterStartup = doc["delayAfterStartup"] | config.delayAfterStartup;
-        
-        // Inne parametry
-        config.wireTemperature = doc["wireTemperature"] | config.wireTemperature;
-        config.enableFan = doc["enableFan"] | config.enableFan;
-        config.fanSpeed = doc["fanSpeed"] | config.fanSpeed;
+        // Pozostałe parametry
+        if (doc.containsKey("useGCodeFeedRate")) config.useGCodeFeedRate = doc["useGCodeFeedRate"].as<bool>();
+        if (doc.containsKey("delayAfterStartup")) config.delayAfterStartup = doc["delayAfterStartup"].as<int>();
+        if (doc.containsKey("deactivateESTOP")) config.deactivateESTOP = doc["deactivateESTOP"].as<bool>();
+        if (doc.containsKey("deactivateLimitSwitches")) config.deactivateLimitSwitches = doc["deactivateLimitSwitches"].as<bool>();
+        if (doc.containsKey("limitSwitchType")) config.limitSwitchType = doc["limitSwitchType"].as<uint8_t>();
         
         xSemaphoreGive(configMutex);
+        
+        #ifdef DEBUG_CONFIG_MANAGER
+            Serial.println("DEBUG CONFIG: Configuration successfully loaded from JSON");
+        #endif
+        
+        return ConfigManagerStatus::OK;
     }
     
-    return ConfigManagerStatus::OK;
+    return ConfigManagerStatus::UNKNOWN_ERROR;
 }
 
-// Szablon metody do aktualizacji pojedynczego parametru
-// Uwaga: Poniższa implementacja jest uproszczona i obsługuje tylko kilka podstawowych parametrów
-// W praktyce wymagałaby lepszej implementacji z obsługą wszystkich możliwych parametrów
 template<typename T>
 ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName, T value) {
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
         // Aktualizacja wybranego parametru
+        // Parametry osi X
         if (paramName == "xAxis.stepsPerMM") config.xAxis.stepsPerMM = static_cast<float>(value);
-        else if (paramName == "xAxis.maxFeedRate") config.xAxis.maxFeedRate = static_cast<float>(value);
+        else if (paramName == "xAxis.workFeedRate") config.xAxis.workFeedRate = static_cast<float>(value);
+        else if (paramName == "xAxis.workAcceleration") config.xAxis.workAcceleration = static_cast<float>(value);
+        else if (paramName == "xAxis.rapidFeedRate") config.xAxis.rapidFeedRate = static_cast<float>(value);
+        else if (paramName == "xAxis.rapidAcceleration") config.xAxis.rapidAcceleration = static_cast<float>(value);
+        
+        // Parametry osi Y
         else if (paramName == "yAxis.stepsPerMM") config.yAxis.stepsPerMM = static_cast<float>(value);
-        else if (paramName == "yAxis.maxFeedRate") config.yAxis.maxFeedRate = static_cast<float>(value);
+        else if (paramName == "yAxis.workFeedRate") config.yAxis.workFeedRate = static_cast<float>(value);
+        else if (paramName == "yAxis.workAcceleration") config.yAxis.workAcceleration = static_cast<float>(value);
+        else if (paramName == "yAxis.rapidFeedRate") config.yAxis.rapidFeedRate = static_cast<float>(value);
+        else if (paramName == "yAxis.rapidAcceleration") config.yAxis.rapidAcceleration = static_cast<float>(value);
+        
+        // Pozostałe parametry
         else if (paramName == "useGCodeFeedRate") config.useGCodeFeedRate = static_cast<bool>(value);
         else if (paramName == "delayAfterStartup") config.delayAfterStartup = static_cast<int>(value);
-        else if (paramName == "wireTemperature") config.wireTemperature = static_cast<float>(value);
-        else if (paramName == "enableFan") config.enableFan = static_cast<bool>(value);
-        else if (paramName == "fanSpeed") config.fanSpeed = static_cast<int>(value);
+        else if (paramName == "deactivateESTOP") config.deactivateESTOP = static_cast<bool>(value);
+        else if (paramName == "deactivateLimitSwitches") config.deactivateLimitSwitches = static_cast<bool>(value);
+        else if (paramName == "limitSwitchType") config.limitSwitchType = static_cast<uint8_t>(value);
         
         xSemaphoreGive(configMutex);
         

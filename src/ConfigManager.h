@@ -11,34 +11,22 @@
 struct MachineConfig {
     // Parametry silników
     struct MotorConfig {
-        float stepsPerMM;        // Ilość kroków na milimetr
-        float maxFeedRate;       // Maksymalna prędkość ruchu (mm/min)
-        float maxAcceleration;   // Maksymalne przyspieszenie (mm/s²)
-        float rapidFeedRate;     // Prędkość ruchu szybkiego (mm/min)
-        float rapidAcceleration; // Przyspieszenie ruchu szybkiego (mm/s²)
+        float stepsPerMM {};        // Ilość kroków silnika na milimetr ruchu 
+        float workFeedRate {};       // Maksymalna prędkość ruchu (G1) [mm/min]
+        float workAcceleration {} ;   // Maksymalne przyspieszenie (G1) [mm/s^2]
+        float rapidFeedRate {};     // Prędkość ruchu szybkiego (G0) [mm/min]
+        float rapidAcceleration {}; // Przyspieszenie ruchu szybkiego (G0)[mm/s^2]
     };
 
-    MotorConfig xAxis;
-    MotorConfig yAxis;
+    MotorConfig xAxis {};
+    MotorConfig yAxis {};
 
-    // Parametry operacyjne
-    bool useGCodeFeedRate;      // Czy używać prędkości podanej w G-code
-    int delayAfterStartup;      // Opóźnienie po uruchomieniu (ms)
-    
-    // Inne parametry
-    float wireTemperature;      // Temperatura drutu (°C, jeśli stosowane)
-    bool enableFan;             // Czy włączyć wentylator podczas pracy
-    int fanSpeed;               // Prędkość wentylatora (0-255)
-
-    // Konstruktor z wartościami domyślnymi
-    MachineConfig() : 
-        xAxis({200.0f, 3000.0f, 500.0f, 5000.0f, 1000.0f}),
-        yAxis({200.0f, 3000.0f, 500.0f, 5000.0f, 1000.0f}),
-        useGCodeFeedRate(true),
-        delayAfterStartup(1000),
-        wireTemperature(300.0f),
-        enableFan(true),
-        fanSpeed(255) {}
+    // Pozostałe parametry
+    bool useGCodeFeedRate {};      // Czy używać prędkości podanej w G-code
+    int delayAfterStartup {};      // Opóźnienie po uruchomieniu (ms)
+    bool deactivateESTOP {};       // Wyłączenie zabezpieczenia ESTOP
+    bool deactivateLimitSwitches {}; // Wyłączenie wyłączników krańcowych
+    uint8_t limitSwitchType {};     // Typ wyłączników krańcowych (0 - NO, 1 - NC)
 };
 
 enum class ConfigManagerStatus {
@@ -53,30 +41,29 @@ enum class ConfigManagerStatus {
 
 class ConfigManager {
 private:
-    // Ścieżka do pliku konfiguracyjnego
-    std::string configFilePath;
     
-    // Wskaźnik do managera karty SD
-    SDCardManager* sdManager;
+    SDCardManager* sdManager {};
     
-    // Bieżąca konfiguracja
-    MachineConfig config;
+    MachineConfig config {};
     
     // Mutex do synchronizacji dostępu do konfiguracji
-    SemaphoreHandle_t configMutex;
+    SemaphoreHandle_t configMutex {};
     
     // Flaga wskazująca, czy konfiguracja została załadowana
-    bool configLoaded;
+    bool configLoaded {false};
 
 public:
     // Konstruktor
-    ConfigManager(SDCardManager* sdManager, const std::string& configPath = "/config/machine_config.json");
+    ConfigManager(SDCardManager* sdManager);
     
     // Destruktor
     ~ConfigManager();
     
     // Inicjalizacja managera konfiguracji
     ConfigManagerStatus init();
+
+    // Pobranie bieżącej konfiguracji
+    MachineConfig getConfig();
     
     // Wczytanie konfiguracji z pliku
     ConfigManagerStatus loadConfig();
@@ -84,19 +71,13 @@ public:
     // Zapisanie konfiguracji do pliku
     ConfigManagerStatus saveConfig();
     
-    // Ustawienie domyślnej konfiguracji
-    void setDefaultConfig();
-    
-    // Pobranie bieżącej konfiguracji (bezpieczne, z mutexem)
-    MachineConfig getConfig();
-    
-    // Ustawienie całej konfiguracji (bezpieczne, z mutexem)
+    // Ustawienie całej konfiguracji
     ConfigManagerStatus setConfig(const MachineConfig& newConfig);
     
-    // Aktualizacja pojedynczego parametru (jako przykład, można rozszerzyć)
+    // Aktualizacja pojedynczego parametru
     template<typename T>
     ConfigManagerStatus updateParameter(const std::string& paramName, T value);
-    
+
     // Serializacja konfiguracji do JSON
     String configToJson();
     

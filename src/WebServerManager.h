@@ -5,6 +5,7 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 
+#include "SharedTypes.h"
 #include "SDManager.h"
 #include "ConfigManager.h"
 
@@ -19,32 +20,34 @@ enum class WebServerStatus{
 class WebServerManager {
 private:
 
-    AsyncWebServer* server{nullptr};
-    AsyncEventSource* events{nullptr};
-    SDCardManager* sdManager{nullptr};
+    AsyncWebServer* server {nullptr};
+    AsyncEventSource* events {nullptr};
 
-    ConfigManager* configManager{nullptr};
+    SDCardManager* sdManager {nullptr};
+    ConfigManager* configManager  {nullptr};
+
+    QueueHandle_t commandQueue; 
 
     // Track initialization status
-    bool serverInitialized{false};
+    bool serverInitialized {false};
 
     // Track events initialization status
-    bool eventsInitialized{false};
+    bool eventsInitialized {false};
 
     // Track server startup status
-    bool serverStarted{false};
+    bool serverStarted {false};
 
     // Sets up all server routes and handlers
     void setupRoutes();
-
-    // Endpoints
-    bool startUserCommand{false}; // Start button status
-    bool stopUserCommand{false}; // Stop button status
+    void setupIndexRoutes();
+    void setupConfigRoutes();
+    void setupJogRoutes();
+    void setupProjectsRoutes();
    
 public:
 
     // Construct a new Web Server Manager Pointer to initialized SD card manager
-    WebServerManager(SDCardManager* sdManager, ConfigManager* configManager = nullptr);
+    WebServerManager(SDCardManager* sdManager, ConfigManager* configManager);
 
     // Destroy and clean up allocated resources of the Web Server Manager
     ~WebServerManager();
@@ -67,62 +70,5 @@ public:
     // true = events have been initialized
     bool isEventsInitialized();
 
-    // Get Start button status
-    // true = start button has been pressed
-    bool getStartCommand();
-
-    // Get Stop button status
-    // true = stop button has been pressed
-    bool getStopCommand();
-
-
-    /////
-
-        // Flagi dla kontroli JOG
-        bool commandJog{false};      // Flaga wskazująca, czy został wysłany komenda JOG
-        float jogX{0.0f};            // Odległość ruchu JOG dla osi X
-        float jogY{0.0f};            // Odległość ruchu JOG dla osi Y
-        float jogSpeed{1000.0f};     // Prędkość ruchu JOG
-        
-        // Flagi dla innych komend
-        bool pauseUserCommand{false};      // Flaga wstrzymania przetwarzania
-        bool commandZero{false};           // Flaga zerowania pozycji
-        bool commandHoming{false};         // Flaga bazowania
-        bool commandEmergencyStop{false};  // Flaga zatrzymania awaryjnego
-        
-        // Stan maszyny do raportowania
-        String machineState{"idle"};       // Stan maszyny (idle, running, error)
-        bool wireOn{false};                // Stan drutu grzejnego
-        bool fanOn{false};                 // Stan wentylatora
-        
-        // Aktualna pozycja maszyny
-        float positionX{0.0f};             // Aktualna pozycja X
-        float positionY{0.0f};             // Aktualna pozycja Y
-        
-        // Status zadania
-        float jobProgress{0.0f};           // Postęp zadania (0-100%)
-        
-        // Gettery dla nowych komend
-        bool getPauseCommand();
-        bool getJogCommand();
-        bool getZeroCommand();
-        bool getHomingCommand();
-        bool getEmergencyStopCommand();
-        
-        // Getter i setter dla stanu drutu
-        bool getWireState();
-        void setWireState(bool state);
-        
-        // Getter i setter dla stanu wentylatora
-        bool getFanState();
-        void setFanState(bool state);
-        
-        // Aktualizacja statusu maszyny
-        void updateMachineState(const String& state);
-        
-        // Aktualizacja pozycji
-        void updatePosition(float x, float y);
-        
-        // Aktualizacja postępu zadania
-        void updateJobProgress(float progress);
+    void sendCommand(CommandType type, float param1 = 0.0f, float param2 = 0.0f, float param3 = 0.0f);
 };

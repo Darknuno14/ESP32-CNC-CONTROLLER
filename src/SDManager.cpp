@@ -4,51 +4,69 @@
 #include <SD.h>
 #include <Arduino.h>
 
-SDMenagerStatus SDCardManager::init() {
+SDCardManager::~SDCardManager() {
+    if (sdMutex != nullptr) {
+        vSemaphoreDelete(sdMutex);
+    }
+}
+
+SDManagerStatus SDCardManager::init() {
     if (!SD.begin(CONFIG::SD_CS_PIN)) {
-        return SDMenagerStatus::INIT_FAILED;
+        return SDManagerStatus::INIT_FAILED;
     }
 
     if (!SD.exists(CONFIG::PROJECTS_DIR)) {
-        if (!createProjectsDirectory()) {
-            return SDMenagerStatus::DIRECTORY_CREATE_FAILED;
+        if (!createDirectory(CONFIG::PROJECTS_DIR)) {
+            return SDManagerStatus::DIRECTORY_CREATE_FAILED;
+        }
+    }
+
+    if (!SD.exists(CONFIG::CONFIG_DIR)) {
+        if (!createDirectory(CONFIG::CONFIG_DIR)) {
+            return SDManagerStatus::DIRECTORY_CREATE_FAILED;
         }
     }
 
     this->sdMutex = xSemaphoreCreateMutex();
+
     if (this->sdMutex == nullptr) {
-        return SDMenagerStatus::MUTEX_CREATE_FAILED;
+        return SDManagerStatus::MUTEX_CREATE_FAILED;
     }
     
     this->cardInitialized = true;
-    return SDMenagerStatus::OK;
+    return SDManagerStatus::OK;
 }
 
-bool SDCardManager::createProjectsDirectory() {
-    std::string path = CONFIG::PROJECTS_DIR;
-    if (!path.empty() && path.back() == '/') {
-        path.pop_back();
+bool SDCardManager::createDirectory(const std::string& path) {
+    std::string localPath {path};
+    if (!localPath.empty() && localPath.back() == '/') {
+        localPath.pop_back();
     }
-    return SD.mkdir(path.c_str());
+    return SD.mkdir(localPath.c_str());
 }
 
 bool SDCardManager::isCardInitialized() const {
       return cardInitialized;
 }
 
-SDMenagerStatus SDCardManager::listProjectFiles() {
+SDManagerStatus SDCardManager::updateProjectList() {
     if (!this->isCardInitialized()) {
-        return SDMenagerStatus::CARD_NOT_INITIALIZED;
+        return SDManagerStatus::CARD_NOT_INITIALIZED;
     }
 
-    std::string path = CONFIG::PROJECTS_DIR;
+    std::string path {CONFIG::PROJECTS_DIR};
     if (!path.empty() && path.back() == '/') {
         path.pop_back();
     }
 
+    if (!takeSD()) {
+        return SDManagerStatus::SD_BUSY;
+    }
+
     File dir = SD.open(path.c_str());
     if (!dir || !dir.isDirectory()) {
-        return SDMenagerStatus::DIRECTORY_OPEN_FAILED;
+        giveSD();
+        return SDManagerStatus::DIRECTORY_OPEN_FAILED;
     }
 
     this->projectFiles.clear();
@@ -63,12 +81,23 @@ SDMenagerStatus SDCardManager::listProjectFiles() {
     }
 
     dir.close();
+    giveSD();
 
-    return SDMenagerStatus::OK;
+    return SDManagerStatus::OK;
 }
 
-std::vector<std::string> SDCardManager::getProjectFiles() const {
-    return projectFiles;
+SDManagerStatus SDCardManager::getProjectFiles(std::vector<std::string>& projectList) {
+    if (!this->isCardInitialized()) {
+        return SDManagerStatus::CARD_NOT_INITIALIZED;
+    }
+
+    if (!takeSD()){
+        return SDManagerStatus::SD_BUSY;
+    } 
+
+    projectList = projectFiles;
+    giveSD();
+    return SDManagerStatus::OK;
 }
 
 bool SDCardManager::takeSD() {
@@ -88,13 +117,35 @@ bool SDCardManager::isProjectSelected() const {
     return this->projectIsSelected;
 }
 
-const std::string& SDCardManager::getSelectedProject() {
-    return this->selectedProject;
+SDManagerStatus SDCardManager::getSelectedProject(std::string& projectName) {
+    if (!takeSD()) {
+        return SDManagerStatus::SD_BUSY;
+    }
+    projectName = this->selectedProject;
+    giveSD();
+    return SDManagerStatus::OK;
 }
 
-void SDCardManager::setSelectedProject(const std::string& filename) {
+SDManagerStatus  SDCardManager::setSelectedProject(const std::string& filename) {
+    if (!isCardInitialized()) {
+        return SDManagerStatus::CARD_NOT_INITIALIZED;
+    }
+
+    if (!takeSD()) {
+        return SDManagerStatus::SD_BUSY;
+    }
+
+    std::string fullPath {CONFIG::PROJECTS_DIR + filename}; 
+    if(!SD.exists(fullPath.c_str()))
+    {
+        giveSD();
+        return SDManagerStatus::FILE_NOT_FOUND;
+    }
+
     this->selectedProject = filename;
     this->projectIsSelected = true;
+    giveSD();
+    return SDManagerStatus::OK;
 }
 
 void SDCardManager::clearSelectedProject() {
