@@ -74,6 +74,9 @@ function fetchFileList() {
         updateFileList(data);
       } else if (data.files && Array.isArray(data.files)) {
         updateFileList(data.files);
+      } else if (data && data.success && data.files) {
+        // Handle the actual format the server returns
+        updateFileList(data.files);
       } else {
         console.error('Unexpected response format:', data);
         updateFileList([]);

@@ -78,7 +78,7 @@ WebServerStatus WebServerManager::begin() {
         server->serveStatic("/css/", LittleFS, "/css/")
             .setCacheControl("max-age=86400"); // Cache for 24 hours
     }
-    
+
     // Setup the routes for the web server
     setupRoutes();
     
@@ -102,14 +102,6 @@ WebServerStatus WebServerManager::begin() {
 
 void WebServerManager::setupRoutes() {
     if (server == nullptr) return; 
-
-    // Brak strony
-    server->onNotFound([](AsyncWebServerRequest *request) {
-        Serial.printf("404 Not Found: %s (Method: %s)\n", 
-                     request->url().c_str(), 
-                     request->methodToString());
-        request->send(404, "text/plain", "404: Not found");
-    });
 
     server->on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         #ifdef DEBUG_SERVER_ROUTES
@@ -143,6 +135,14 @@ void WebServerManager::setupRoutes() {
     setupConfigRoutes();
     setupJogRoutes();
     setupProjectsRoutes();
+
+    // Brak strony
+    server->onNotFound([](AsyncWebServerRequest *request) {
+        Serial.printf("404 Not Found: %s (Method: %s)\n", 
+                     request->url().c_str(), 
+                     request->methodToString());
+        request->send(404, "text/plain", "404: Not found");
+    });
 }
 
 void WebServerManager::setupIndexRoutes() {
