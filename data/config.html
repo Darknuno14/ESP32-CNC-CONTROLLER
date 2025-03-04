@@ -56,6 +56,7 @@
     
     <!-- Configuration Form -->
     <form id="configForm">
+      <!-- OŚ X -->
       <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">X Axis Configuration</h5>
@@ -69,33 +70,33 @@
               <div class="form-text">Number of motor steps required to move 1mm</div>
             </div>
             <div class="col-md-6">
-              <label for="xMaxFeedRate" class="form-label">Max Feed Rate (mm/min)</label>
-              <input type="number" class="form-control" id="xMaxFeedRate" name="xAxis.maxFeedRate" step="0.1" required>
-              <div class="form-text">Maximum speed for normal cutting movements (G1)</div>
+              <label for="xWorkFeedRate" class="form-label">Work Feed Rate (mm/min)</label>
+              <input type="number" class="form-control" id="xWorkFeedRate" name="xAxis.workFeedRate" step="0.1" required>
+              <div class="form-text">Speed for normal cutting movements (G1)</div>
             </div>
           </div>
           <div class="row mb-3">
             <div class="col-md-6">
-              <label for="xMaxAcceleration" class="form-label">Max Acceleration (mm/s²)</label>
-              <input type="number" class="form-control" id="xMaxAcceleration" name="xAxis.maxAcceleration" step="0.1" required>
-              <div class="form-text">Maximum acceleration for normal cutting movements</div>
+              <label for="xWorkAcceleration" class="form-label">Work Acceleration (mm/s²)</label>
+              <input type="number" class="form-control" id="xWorkAcceleration" name="xAxis.workAcceleration" step="0.1" required>
+              <div class="form-text">Acceleration for normal cutting movements</div>
             </div>
             <div class="col-md-6">
               <label for="xRapidFeedRate" class="form-label">Rapid Feed Rate (mm/min)</label>
               <input type="number" class="form-control" id="xRapidFeedRate" name="xAxis.rapidFeedRate" step="0.1" required>
-              <div class="form-text">Maximum speed for rapid movements (G0)</div>
+              <div class="form-text">Speed for rapid movements (G0)</div>
             </div>
           </div>
           <div class="row mb-3">
             <div class="col-md-6">
               <label for="xRapidAcceleration" class="form-label">Rapid Acceleration (mm/s²)</label>
               <input type="number" class="form-control" id="xRapidAcceleration" name="xAxis.rapidAcceleration" step="0.1" required>
-              <div class="form-text">Maximum acceleration for rapid movements</div>
+              <div class="form-text">Acceleration for rapid movements</div>
             </div>
           </div>
         </div>
       </div>
-      
+      <!--OŚ Y-->
       <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Y Axis Configuration</h5>
@@ -109,33 +110,33 @@
               <div class="form-text">Number of motor steps required to move 1mm</div>
             </div>
             <div class="col-md-6">
-              <label for="yMaxFeedRate" class="form-label">Max Feed Rate (mm/min)</label>
-              <input type="number" class="form-control" id="yMaxFeedRate" name="yAxis.maxFeedRate" step="0.1" required>
-              <div class="form-text">Maximum speed for normal cutting movements (G1)</div>
+              <label for="yWorkFeedRate" class="form-label">Work Feed Rate (mm/min)</label>
+              <input type="number" class="form-control" id="yWorkFeedRate" name="yAxis.workFeedRate" step="0.1" required>
+              <div class="form-text">Speed for normal cutting movements (G1)</div>
             </div>
           </div>
           <div class="row mb-3">
             <div class="col-md-6">
-              <label for="yMaxAcceleration" class="form-label">Max Acceleration (mm/s²)</label>
-              <input type="number" class="form-control" id="yMaxAcceleration" name="yAxis.maxAcceleration" step="0.1" required>
-              <div class="form-text">Maximum acceleration for normal cutting movements</div>
+              <label for="yWorkAcceleration" class="form-label">Work Acceleration (mm/s²)</label>
+              <input type="number" class="form-control" id="yWorkAcceleration" name="yAxis.workAcceleration" step="0.1" required>
+              <div class="form-text">Acceleration for normal cutting movements</div>
             </div>
             <div class="col-md-6">
               <label for="yRapidFeedRate" class="form-label">Rapid Feed Rate (mm/min)</label>
               <input type="number" class="form-control" id="yRapidFeedRate" name="yAxis.rapidFeedRate" step="0.1" required>
-              <div class="form-text">Maximum speed for rapid movements (G0)</div>
+              <div class="form-text">Speed for rapid movements (G0)</div>
             </div>
           </div>
           <div class="row mb-3">
             <div class="col-md-6">
               <label for="yRapidAcceleration" class="form-label">Rapid Acceleration (mm/s²)</label>
               <input type="number" class="form-control" id="yRapidAcceleration" name="yAxis.rapidAcceleration" step="0.1" required>
-              <div class="form-text">Maximum acceleration for rapid movements</div>
+              <div class="form-text">Acceleration for rapid movements</div>
             </div>
           </div>
         </div>
       </div>
-      
+      <!--POZOSTALE-->
       <div class="card mb-4">
         <div class="card-header">
           <h5>Operation Configuration</h5>
@@ -157,36 +158,7 @@
           </div>
         </div>
       </div>
-      
-      <div class="card mb-4">
-        <div class="card-header">
-          <h5>Wire Configuration</h5>
-        </div>
-        <div class="card-body">
-          <div class="row mb-3">
-            <div class="col-md-6">
-              <label for="wireTemperature" class="form-label">Wire Temperature (°C)</label>
-              <input type="number" class="form-control" id="wireTemperature" name="wireTemperature" step="0.1" required>
-              <div class="form-text">Target temperature for cutting wire</div>
-            </div>
-            <div class="col-md-6">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="enableFan" name="enableFan">
-                <label class="form-check-label" for="enableFan">Enable Fan</label>
-              </div>
-              <div class="form-text">Enable cooling fan during operation</div>
-            </div>
-          </div>
-          <div class="row mb-3">
-            <div class="col-md-6">
-              <label for="fanSpeed" class="form-label">Fan Speed (0-255)</label>
-              <input type="number" class="form-control" id="fanSpeed" name="fanSpeed" min="0" max="255" required>
-              <div class="form-text">Fan speed (0 = off, 255 = full speed)</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      
+      <!-- SAFETY -->
       <div class="card mb-4">
         <div class="card-header">
           <h5>Safety Configuration</h5>
@@ -227,7 +199,6 @@
             <span id="loadingSpinner" class="spinner-border spinner-border-sm me-1" style="display: none;"></span>
             Load Configuration
           </button>
-          <button type="button" id="resetButton" class="btn btn-warning">Reset to Defaults</button>
         </div>
         <button type="submit" id="saveBtn" class="btn btn-primary" disabled>
           <span id="savingSpinner" class="spinner-border spinner-border-sm me-1" style="display: none;"></span>

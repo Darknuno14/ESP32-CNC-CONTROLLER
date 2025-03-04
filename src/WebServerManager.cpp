@@ -250,6 +250,8 @@ void WebServerManager::setupIndexRoutes() {
 }
 
 void WebServerManager::setupConfigRoutes() {
+
+
     // Pobieranie konfiguracji
     server->on("/api/config", HTTP_GET, [this](AsyncWebServerRequest *request) {
         #ifdef DEBUG_SERVER_ROUTES
@@ -268,7 +270,7 @@ void WebServerManager::setupConfigRoutes() {
     // Aktualizacja całej konfiguracji
     server->on("/api/config", HTTP_POST, 
         [](AsyncWebServerRequest *request) {
-            request->send(200);
+            request->send(200, "text/plain", "Processing POST request...");
         },
         NULL,
         [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
@@ -283,6 +285,7 @@ void WebServerManager::setupConfigRoutes() {
             if (index + len == total) {
                 #ifdef DEBUG_SERVER_ROUTES
                     Serial.println("DEBUG SERVER STATUS: Processing complete config");
+                    Serial.println("DEBUG SERVER: Received JSON: " + jsonBuffer);
                 #endif
                 
                 if (!this->configManager) {
@@ -291,18 +294,38 @@ void WebServerManager::setupConfigRoutes() {
                 }
                 
                 ConfigManagerStatus status = this->configManager->configFromJson(jsonBuffer);
+                String message;
                 
                 if (status == ConfigManagerStatus::OK) {
                     status = this->configManager->saveConfig();
                 }
                 
-                String response = "{\"success\":" + String(status == ConfigManagerStatus::OK ? "true" : "false") + "}";
+                switch (status) {
+                    case ConfigManagerStatus::OK:
+                        message = "Configuration saved successfully";
+                        break;
+                    case ConfigManagerStatus::SD_ACCESS_ERROR:
+                        message = "SD access error";
+                        break;
+                    case ConfigManagerStatus::FILE_OPEN_FAILED:
+                        message = "Failed to open config file";
+                        break;
+                    case ConfigManagerStatus::FILE_WRITE_FAILED:
+                        message = "Failed to write to config file";
+                        break;
+                    case ConfigManagerStatus::JSON_PARSE_ERROR:
+                        message = "Invalid JSON format";
+                        break;
+                    default:
+                        message = "Unknown error";
+                        break;
+                }
+                
+                String response = "{\"success\":" + String(status == ConfigManagerStatus::OK ? "true" : "false") + 
+                                 ",\"message\":\"" + message + "\"}";
                 request->send(status == ConfigManagerStatus::OK ? 200 : 400, "application/json", response);
             }
-        }
-    );
-
-
+        });
 }
 
 void WebServerManager::setupJogRoutes() {

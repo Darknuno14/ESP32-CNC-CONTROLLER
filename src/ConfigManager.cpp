@@ -3,7 +3,7 @@
 #include <ArduinoJson.h>
 #include "CONFIGURATION.H"
 
-ConfigManager::ConfigManager(SDCardManager* sdManager) {
+ConfigManager::ConfigManager(SDCardManager* sdManager): sdManager(sdManager) {
     configMutex = xSemaphoreCreateMutex();
 }
 
@@ -19,14 +19,17 @@ ConfigManagerStatus ConfigManager::init() {
         return ConfigManagerStatus::SD_ACCESS_ERROR;
     }
 
-    ConfigManagerStatus status = loadConfig();
-    if (status == ConfigManagerStatus::OK) {
-        configLoaded = true;
-        return ConfigManagerStatus::OK;
+    constexpr int MAX_NUM_OF_TRIES {5};
+    ConfigManagerStatus status {};
+    for(int i{0}; i < MAX_NUM_OF_TRIES; ++i){
+        status = loadConfig();
+        if (status == ConfigManagerStatus::OK) {
+            this->configLoaded = true;
+            status = ConfigManagerStatus::OK;
+            break;
+        }
     }
-    else {
-        return status;
-    }
+    return status;
 
 }
 
@@ -43,7 +46,7 @@ ConfigManagerStatus ConfigManager::loadConfig() {
         return ConfigManagerStatus::FILE_OPEN_FAILED;
     }
     
-    File configFile {SD.open(CONFIG::CONFIG_DIR, FILE_READ)};
+    File configFile {SD.open(configFilePath.c_str(), FILE_READ)};
     if (!configFile) {
         sdManager->giveSD();
         return ConfigManagerStatus::FILE_OPEN_FAILED;
@@ -53,6 +56,7 @@ ConfigManagerStatus ConfigManager::loadConfig() {
     while (configFile.available()) {
         jsonString += (char)configFile.read();
     }
+
     configFile.close();
     sdManager->giveSD();
     
@@ -60,7 +64,17 @@ ConfigManagerStatus ConfigManager::loadConfig() {
 }
 
 ConfigManagerStatus ConfigManager::saveConfig() {
+    if (!sdManager) {
+        #ifdef DEBUG_CONFIG_MANAGER
+            Serial.println("ERROR: SD Manager is nullptr");
+        #endif
+        return ConfigManagerStatus::SD_ACCESS_ERROR;
+    }
+    
     if (!sdManager->takeSD()) {
+        #ifdef DEBUG_CONFIG_MANAGER
+            Serial.println("ERROR: Failed to take SD");
+        #endif
         return ConfigManagerStatus::SD_ACCESS_ERROR;
     }
     
@@ -70,6 +84,9 @@ ConfigManagerStatus ConfigManager::saveConfig() {
     File configFile {SD.open(configFilePath.c_str(), FILE_WRITE)};
     if (!configFile) {
         sdManager->giveSD();
+        #ifdef DEBUG_CONFIG_MANAGER
+            Serial.println("ERROR: Failed to open config file");
+        #endif
         return ConfigManagerStatus::FILE_OPEN_FAILED;
     }
 
@@ -78,6 +95,9 @@ ConfigManagerStatus ConfigManager::saveConfig() {
     if (configFile.print(jsonString) == 0) {
         configFile.close();
         sdManager->giveSD();
+        #ifdef DEBUG_CONFIG_MANAGER
+            Serial.println("ERROR: Failed to write to config file");
+        #endif
         return ConfigManagerStatus::FILE_WRITE_FAILED;
     }
     
