@@ -70,24 +70,26 @@ function fetchFileList() {
     .then(response => response.json())
     .then(data => {
       console.log('File list received:', data);
-      if (Array.isArray(data)) {
-        updateFileList(data);
-      } else if (data.files && Array.isArray(data.files)) {
+      
+      if (data && data.success && Array.isArray(data.files)) {
         updateFileList(data.files);
-      } else if (data && data.success && data.files) {
-        // Handle the actual format the server returns
-        updateFileList(data.files);
+        
+        const storedFile = localStorage.getItem('selectedFile');
+        if (storedFile && data.files.includes(storedFile)) {
+          selectedFilename = storedFile;
+          document.getElementById('selected-file').textContent = `Selected file: ${storedFile}`;
+          const radioButton = document.querySelector(`input[value="${storedFile}"]`);
+          if (radioButton) radioButton.checked = true;
+        }
       } else {
         console.error('Unexpected response format:', data);
         updateFileList([]);
-      }
-      
-      const storedFile = localStorage.getItem('selectedFile');
-      if (storedFile && (Array.isArray(data) ? data.includes(storedFile) : (data.files && data.files.includes(storedFile)))) {
-        selectedFilename = storedFile;
-        document.getElementById('selected-file').textContent = `Selected file: ${storedFile}`;
-        const radioButton = document.querySelector(`input[value="${storedFile}"]`);
-        if (radioButton) radioButton.checked = true;
+        
+        if (data && data.message) {
+          showMessage(data.message, 'error');
+        } else {
+          showMessage('Received invalid data format from server', 'error');
+        }
       }
     })
     .catch(error => {
@@ -114,12 +116,13 @@ function refreshFileList() {
       return response.json();
     })
     .then(data => {
-      if (Array.isArray(data)) {
-        updateFileList(data);
-      } else if (data.files && Array.isArray(data.files)) {
+      if (data && data.success && Array.isArray(data.files)) {
         updateFileList(data.files);
+        showMessage('File list refreshed successfully');
+      } else {
+        console.error('Unexpected response format:', data);
+        showMessage('Received invalid data format from server', 'warning');
       }
-      showMessage('File list refreshed successfully');
     })
     .catch(error => {
       showMessage(`Failed to refresh file list: ${error.message}`, 'error');
@@ -154,10 +157,11 @@ function submitFileSelection() {
 
 // Podgląd zawartości pliku G-code
 function viewGCode(filename) {
-  // Use the correct endpoint format that matches your server implementation
-  fetch('/api/sd-files/' + encodeURIComponent(filename))
+  fetch('/api/sd_content?file=' + encodeURIComponent(filename))
     .then(response => {
-      if (!response.ok) throw new Error('Failed to fetch file content');
+      if (!response.ok) {
+        throw new Error('Failed to fetch file content: ' + response.status);
+      }
       return response.text();
     })
     .then(content => {
@@ -201,12 +205,22 @@ function visualizeGCode(filename) {
     return;
   }
 
-  fetch('/api/sd-files/' + encodeURIComponent(filename))
+  console.log('Visualizing file:', filename);
+
+  // ZMIEŃ TĘ LINIĘ:
+  // Stara wersja: fetch('/api/sd-files/' + encodeURIComponent(filename))
+  fetch('/api/sd_content?file=' + encodeURIComponent(filename))
     .then(response => {
-      if (!response.ok) throw new Error('Failed to fetch file');
+      if (!response.ok) {
+        console.error('Failed to fetch file:', response.status, response.statusText);
+        throw new Error('Failed to fetch file: ' + response.status);
+      }
       return response.text();
     })
-    .then(gcode => renderGCodePreview(gcode))
+    .then(gcode => {
+      console.log('Received G-code data, length:', gcode.length);
+      renderGCodePreview(gcode);
+    })
     .catch(error => {
       console.error('Error fetching G-Code file:', error);
       showMessage(`Failed to fetch G-Code file: ${error.message}`, 'error');

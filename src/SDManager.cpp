@@ -34,6 +34,15 @@ SDManagerStatus SDCardManager::init() {
     }
     
     this->cardInitialized = true;
+
+    SDManagerStatus listStatus = this->updateProjectList();
+    #ifdef DEBUG_SD
+        if (listStatus != SDManagerStatus::OK) {
+            Serial.println("WARNING: Zainicjalizowano SD, ale nie wczytano listy projektow.");
+    #endif
+    }
+
+
     return SDManagerStatus::OK;
 }
 

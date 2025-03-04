@@ -73,15 +73,15 @@ WebServerStatus WebServerManager::begin() {
         server->addHandler(events);
     }
 
+    // Setup the routes for the web server
+    setupRoutes();
+    
     // Serve CSS files (z większym bezpieczeństwem)
     if (LittleFS.exists("/css/styles.css")) {
         server->serveStatic("/css/", LittleFS, "/css/")
             .setCacheControl("max-age=86400"); // Cache for 24 hours
     }
 
-    // Setup the routes for the web server
-    setupRoutes();
-    
     // Serve JavaScript files (z większym bezpieczeństwem)
     if (LittleFS.exists("/js/")) {
         server->serveStatic("/js/", LittleFS, "/js/")
@@ -309,6 +309,45 @@ void WebServerManager::setupJogRoutes() {
 }
 
 void WebServerManager::setupProjectsRoutes() {
+
+        server->on("/api/sd_content", HTTP_GET, [this](AsyncWebServerRequest *request) {
+            // Sprawdź, czy parametr file istnieje
+            if (!request->hasParam("file")) {
+                request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing file parameter\"}");
+                return;
+            }
+            
+            // Pobierz nazwę pliku z parametru
+            String filename = request->getParam("file")->value();
+            
+            #ifdef DEBUG_SERVER_ROUTES
+                Serial.printf("DEBUG SERVER: Requested SD file content: %s\n", filename.c_str());
+            #endif
+            
+            // Utwórz pełną ścieżkę do pliku na karcie SD
+            String filePath = String(CONFIG::PROJECTS_DIR) + filename;
+            
+            // Sprawdź dostępność karty SD
+            if (!this->sdManager->takeSD()) {
+                request->send(503, "application/json", "{\"success\":false,\"message\":\"SD card is busy\"}");
+                return;
+            }
+            
+            // Sprawdź, czy plik istnieje
+            if (!SD.exists(filePath)) {
+                Serial.printf("File not found: %s\n", filePath.c_str());
+                this->sdManager->giveSD();
+                request->send(404, "application/json", "{\"success\":false,\"message\":\"File not found\"}");
+                return;
+            }
+            
+            // Wyślij zawartość pliku
+            request->send(SD, filePath, "text/plain");
+            
+            // Zwolnij blokadę karty SD
+            this->sdManager->giveSD();
+        });
+
         // Lista plików
         server->on("/api/list-files", HTTP_GET, [this](AsyncWebServerRequest *request) {
             #ifdef DEBUG_SERVER_ROUTES
@@ -436,94 +475,78 @@ void WebServerManager::setupProjectsRoutes() {
             request->send(success ? 200 : 400, "application/json", response);
         });
 
-        // Przesłanie zawartości pliku
-        server->on("/api/sd-files/^.*", HTTP_GET, [this](AsyncWebServerRequest *request) {
-            std::string filename {request->url().substring(14).c_str()}; // Usunięcie "/api/sd-files/" z nazwy pliku
-            std::string filePath {CONFIG::PROJECTS_DIR + filename};
-        
-            if (!SD.exists(filePath.c_str())) {
-                request->send(404, "application/json", "{\"success\":false,\"message\":\"File not found\"}");
-                return;
-            }
-        
-            // AsyncWebServerowi obsłuży otwieranie, czytanie i zamykanie pliku.
-            // Podano obiekt typu SD jako źródło danych oraz ścieżkę do pliku.
-            // Dla klienta HTTP (np. przeglądarki) wynik będzie taki sam, jakbyś ręcznie otworzył plik, odczytał jego zawartość i wysłał ją jako odpowiedź.
-            request->send(SD, filePath.c_str(), "text/plain");
-        });
-
         // Status karty SD
         server->on("/api/sd-status", HTTP_GET, [this](AsyncWebServerRequest *request) {
             String json = "{\"initialized\":" + String(this->sdManager->isCardInitialized() ? "true" : "false") + "}";
             request->send(200, "application/json", json);
         });
 
-// Reinicjalizacja karty SD i ConfigManager
-server->on("/api/reinitialize-sd", HTTP_POST, [this](AsyncWebServerRequest *request) {
-    #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: SD card reinitialization requested");
-    #endif
-
-    // Najpierw zainicjalizuj kartę SD
-    SDManagerStatus sdResult = this->sdManager->init();
-    bool sdSuccess = (sdResult == SDManagerStatus::OK);
-    
-    bool configSuccess = false;
-    String message = "";
-    
-    if (sdSuccess) {
+    // Reinicjalizacja karty SD i ConfigManager
+    server->on("/api/reinitialize-sd", HTTP_POST, [this](AsyncWebServerRequest *request) {
         #ifdef DEBUG_SERVER_ROUTES
-            Serial.println("DEBUG SERVER STATUS: SD card reinitialization successful");
+            Serial.println("DEBUG SERVER STATUS: SD card reinitialization requested");
         #endif
+
+        // Najpierw zainicjalizuj kartę SD
+        SDManagerStatus sdResult = this->sdManager->init();
+        bool sdSuccess = (sdResult == SDManagerStatus::OK);
         
-        // Następnie zainicjalizuj/reinicjalizuj ConfigManager
-        if (this->configManager) {
-            ConfigManagerStatus configResult = this->configManager->init();
-            configSuccess = (configResult == ConfigManagerStatus::OK);
-            
-            if (configSuccess) {
-                #ifdef DEBUG_SERVER_ROUTES
-                    Serial.println("DEBUG SERVER STATUS: Config manager reinitialized successfully");
-                #endif
-                message = "SD card and configuration reinitialized successfully";
-            } else {
-                #ifdef DEBUG_SERVER_ROUTES
-                    Serial.println("DEBUG SERVER WARNING: Config manager reinitialization failed");
-                #endif
-                message = "SD card reinitialized, but configuration failed";
-            }
-        } else {
-            // Jeśli configManager nie istnieje, stwórz nowy
+        bool configSuccess = false;
+        String message = "";
+        
+        if (sdSuccess) {
             #ifdef DEBUG_SERVER_ROUTES
-                Serial.println("DEBUG SERVER WARNING: Creating new Config manager");
+                Serial.println("DEBUG SERVER STATUS: SD card reinitialization successful");
             #endif
-            this->configManager = new ConfigManager(this->sdManager);
-            ConfigManagerStatus configResult = this->configManager->init();
-            configSuccess = (configResult == ConfigManagerStatus::OK);
             
-            if (configSuccess) {
-                message = "SD card reinitialized and new configuration manager created";
+            // Następnie zainicjalizuj/reinicjalizuj ConfigManager
+            if (this->configManager) {
+                ConfigManagerStatus configResult = this->configManager->init();
+                configSuccess = (configResult == ConfigManagerStatus::OK);
+                
+                if (configSuccess) {
+                    #ifdef DEBUG_SERVER_ROUTES
+                        Serial.println("DEBUG SERVER STATUS: Config manager reinitialized successfully");
+                    #endif
+                    message = "SD card and configuration reinitialized successfully";
+                } else {
+                    #ifdef DEBUG_SERVER_ROUTES
+                        Serial.println("DEBUG SERVER WARNING: Config manager reinitialization failed");
+                    #endif
+                    message = "SD card reinitialized, but configuration failed";
+                }
             } else {
-                message = "SD card reinitialized, but failed to create configuration manager";
+                // Jeśli configManager nie istnieje, stwórz nowy
+                #ifdef DEBUG_SERVER_ROUTES
+                    Serial.println("DEBUG SERVER WARNING: Creating new Config manager");
+                #endif
+                this->configManager = new ConfigManager(this->sdManager);
+                ConfigManagerStatus configResult = this->configManager->init();
+                configSuccess = (configResult == ConfigManagerStatus::OK);
+                
+                if (configSuccess) {
+                    message = "SD card reinitialized and new configuration manager created";
+                } else {
+                    message = "SD card reinitialized, but failed to create configuration manager";
+                }
             }
+            
+            // Zaktualizuj listę projektów
+            this->sdManager->updateProjectList();
+        } else {
+            message = "Failed to reinitialize SD card";
         }
+    
+        // Odpowiedź JSON ze szczegółowymi informacjami
+        DynamicJsonDocument doc(256);
+        doc["success"] = sdSuccess;
+        doc["configSuccess"] = configSuccess;
+        doc["message"] = message;
         
-        // Zaktualizuj listę projektów
-        this->sdManager->updateProjectList();
-    } else {
-        message = "Failed to reinitialize SD card";
-    }
-    
-    // Odpowiedź JSON ze szczegółowymi informacjami
-    DynamicJsonDocument doc(256);
-    doc["success"] = sdSuccess;
-    doc["configSuccess"] = configSuccess;
-    doc["message"] = message;
-    
-    String jsonResponse;
-    serializeJson(doc, jsonResponse);
-    request->send(200, "application/json", jsonResponse);
-});
+        String jsonResponse;
+        serializeJson(doc, jsonResponse);
+        request->send(200, "application/json", jsonResponse);
+    });
 
         // Usuwanie plików
         server->on("/api/delete-file", HTTP_POST, [this](AsyncWebServerRequest *request) {
