@@ -18,35 +18,65 @@
 #include "WiFiManager.h"
 #include "WebServerManager.h"
 
-/*-- GLOBAL SCOPE --*/
+/*
+* ------------------------------------------------------------------------------------------------------------
+* --- GLOBAL SCOPE ---
+* ------------------------------------------------------------------------------------------------------------
+*/
 
-// Globalna instancja, aby był dostęp dla wszystkich zadań
-SDCardManager* sdManager { new SDCardManager() };
-ConfigManager* configManager { new ConfigManager(sdManager) };
+// Instancje menadżerów systemu wykorzystywane w obu Taskach
+SDCardManager* sdManager { new SDCardManager() }; // Do zarządzania kartą SD
+ConfigManager* configManager { new ConfigManager(sdManager) }; // Do zarządzania konfiguracją (parametrami) - odczyt/zapis z/do pliku na karcie SD
 
 // Kolejki do komunikacji między zadaniami
 QueueHandle_t stateQueue {};   // Od CNC do Control (informacje o stanie)
 QueueHandle_t commandQueue {}; // Od Control do CNC (komendy sterujące)
 
-/* --FUNCTION PROTOTYPES-- */
+/*
+* ------------------------------------------------------------------------------------------------------------
+* --- FUNCTION PROTOTYPES ---
+* ------------------------------------------------------------------------------------------------------------
+*/
 
+// Inicjalizuje wszystkie obiekty zarządzające systemem
 void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager,
     WebServerManager* webServerManager, ConfigManager* configManager);
+
+// Nawiązuje połączenie WiFi wykorzystując dane z credentials.h
 void connectToWiFi(WiFiManager* wifiManager);
+
+// Uruchamia serwer WWW do sterowania i monitorowania maszyny
 void startWebServer(WebServerManager* webServerManager);
+
+// Wyciąga wartość parametru z linii G-code dla określonego oznaczenia (np. 'X', 'Y', 'F')
 float getParameter(const String& line, char param);
-bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepperY, MachineState& state, MachineConfig& config);
+
+// Przetwarza pojedynczą linię G-code i wykonuje odpowiednie działania maszynowe
+bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepperY,
+    MachineState& state, MachineConfig& config);
+
+// Przetwarza plik G-code z karty SD - wyłusuje linie i przekazuje do przetwarzania
 uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopCondition,
     volatile const bool& pauseCondition, AccelStepper& stepperX, AccelStepper& stepperY, MachineState& state);
+
+// Aktualizuje stan wyjść fizycznych na podstawie stanu maszyny
 void updateOutputs(const MachineState& state);
-bool executeJogMovement(AccelStepper& stepperX, AccelStepper& stepperY,
-    float xOffset, float yOffset, float speed,
-    const MachineConfig& config, MachineState& state);
-bool executeHomingSequence(AccelStepper& stepperX, AccelStepper& stepperY,
+
+// Wykonuje ruch manualny (jog) na podstawie poleceń z interfejsu webowego
+bool executeJogMovement(AccelStepper& stepperX, AccelStepper& stepperY, float xOffset, float yOffset, float speed,
     const MachineConfig& config, MachineState& state);
 
-/*-- Tasks --*/
+// Wykonuje sekwencję bazowania osi (homing)
+bool executeHomingSequence(AccelStepper& stepperX, AccelStepper& stepperY, const MachineConfig& config,
+    MachineState& state);
 
+/*
+* ------------------------------------------------------------------------------------------------------------
+* --- Tasks ---
+* ------------------------------------------------------------------------------------------------------------
+*/
+
+// Zadanie kontroli i sterowania maszyną - obsługa interfejsu webowego
 void taskControl(void* parameter) {
     Serial.printf("STATUS: Task1 started on core %d\n", xPortGetCoreID());
 
@@ -110,6 +140,7 @@ void taskControl(void* parameter) {
     }
 }
 
+// Zadanie obsługi ruchu CNC - wykonywanie poleceń i kontrola fizycznych wejść/wyjść
 void taskCNC(void* parameter) {
     Serial.printf("STATUS: Task2 started on core %d\n", xPortGetCoreID());
     vTaskDelay(pdMS_TO_TICKS(10000));
@@ -130,9 +161,12 @@ void taskCNC(void* parameter) {
     state.errorCode = 0;
     state.currentProject = "";
 
-    bool processingStopped { false };
-    bool processingPaused { false };
-    bool homingInProgress { false };
+    // Flagi kontrolne
+    bool cuttingActive = false;       // Czy drut jest w trybie cięcia
+    bool processingStopped = false;   // Flaga zatrzymania przetwarzania
+    bool processingPaused = false;    // Flaga wstrzymania przetwarzania
+    bool homingInProgress = false;    // Czy bazowanie jest w trakcie
+    bool jogInProgress = false;       // Czy jog jest w trakcie
 
     unsigned long lastStatusUpdateTime { 0 };                 // Ostatnia aktualizacja statusu
     constexpr unsigned long STATUS_UPDATE_INTERVAL { 500 };   // Interwał aktualizacji statusu (500ms)
@@ -190,18 +224,374 @@ void taskCNC(void* parameter) {
     uint8_t processResult { 0 };
 
     while (true) {
-        // Krótkie opóźnienie, aby zapobiec przekroczeniu czasu watchdoga i umożliwić działanie innych zadań
+        if (millis() - lastCommandProcessTime >= COMMAND_PROCESS_INTERVAL) {
+            if (xQueueReceive(commandQueue, &cmd, 0) == pdTRUE) {
+                #ifdef DEBUG_CNC_TASK
+                Serial.printf("DEBUG CNC: Otrzymano komendę typu %d\n", static_cast<int>(cmd.type));
+                #endif
+
+                // Przetwarzanie komend w zależności od aktualnego stanu maszyny
+                switch (state.state) {
+                    case CNCState::IDLE:
+                        // W stanie IDLE obsługujemy wszystkie komendy
+                        switch (cmd.type) {
+                            case CommandType::START:
+                                if (sdManager->isProjectSelected()) {
+                                    std::string projectName {};
+                                    if (sdManager->getSelectedProject(projectName) == SDManagerStatus::OK) {
+                                        state.currentProject = projectName;
+                                        state.state = CNCState::RUNNING;
+                                        state.isPaused = false;
+                                        state.jobStartTime = millis();
+                                        state.jobProgress = 0.0f;
+                                        state.currentLine = 0;
+                                        processingStopped = false;
+                                        processingPaused = false;
+                                        cuttingActive = true;
+
+                                        #ifdef DEBUG_CNC_TASK
+                                        Serial.printf("DEBUG CNC: Rozpoczynam przetwarzanie projektu: %s\n", projectName.c_str());
+                                        #endif
+                                    }
+                                }
+                                else {
+                                    #ifdef DEBUG_CNC_TASK
+                                    Serial.println("DEBUG CNC: Brak wybranego projektu");
+                                    #endif
+                                }
+                                break;
+
+                            case CommandType::JOG:
+                                // Obsługa JOG w zależności od parametrów
+                                if (cmd.param1 == -1 && cmd.param2 == -1) {
+                                    // Komenda dla drutu grzejnego
+                                    state.hotWireOn = (cmd.param3 > 0.5f);
+                                    updateOutputs(state);
+                                }
+                                else if (cmd.param1 == -2 && cmd.param2 == -2) {
+                                    // Komenda dla wentylatora
+                                    state.fanOn = (cmd.param3 > 0.5f);
+                                    updateOutputs(state);
+                                }
+                                else {
+                                    // Normalny ruch JOG
+                                    state.state = CNCState::JOG;
+                                    jogInProgress = executeJogMovement(
+                                        stepperX, stepperY,
+                                        cmd.param1, cmd.param2, cmd.param3,
+                                        config, state
+                                    );
+                                }
+                                break;
+
+                            case CommandType::HOMING:
+                                state.state = CNCState::HOMING;
+                                homingInProgress = executeHomingSequence(stepperX, stepperY, config, state);
+                                break;
+
+                            case CommandType::ZERO:
+                                stepperX.setCurrentPosition(0);
+                                stepperY.setCurrentPosition(0);
+                                state.currentX = 0.0f;
+                                state.currentY = 0.0f;
+                                #ifdef DEBUG_CNC_TASK
+                                Serial.println("DEBUG CNC: Pozycja wyzerowana");
+                                #endif
+                                break;
+
+                            default:
+                                // Ignorujemy inne komendy w stanie IDLE
+                                break;
+                        }
+                        break;
+
+                    case CNCState::RUNNING:
+                        // W stanie RUNNING obsługujemy komendy STOP i PAUSE
+                        switch (cmd.type) {
+                            case CommandType::STOP:
+                                processingStopped = true;
+                                state.state = CNCState::STOPPED;
+                                cuttingActive = false;
+                                state.hotWireOn = false;
+                                updateOutputs(state);
+                                #ifdef DEBUG_CNC_TASK
+                                Serial.println("DEBUG CNC: Zatrzymano przetwarzanie");
+                                #endif
+                                break;
+
+                            case CommandType::PAUSE:
+                                processingPaused = !processingPaused;
+                                state.isPaused = processingPaused;
+                                #ifdef DEBUG_CNC_TASK
+                                Serial.printf("DEBUG CNC: %s przetwarzanie\n",
+                                    processingPaused ? "Wstrzymano" : "Wznowiono");
+                                #endif
+                                break;
+
+                            default:
+                                // Ignorujemy inne komendy w stanie RUNNING
+                                break;
+                        }
+                        break;
+
+                    case CNCState::JOG:
+                        // W stanie JOG obsługujemy głównie komendy JOG i STOP
+                        switch (cmd.type) {
+                            case CommandType::JOG:
+                                // Obsługa JOG w zależności od parametrów
+                                if (cmd.param1 == -1 && cmd.param2 == -1) {
+                                    // Komenda dla drutu grzejnego
+                                    state.hotWireOn = (cmd.param3 > 0.5f);
+                                    updateOutputs(state);
+                                }
+                                else if (cmd.param1 == -2 && cmd.param2 == -2) {
+                                    // Komenda dla wentylatora
+                                    state.fanOn = (cmd.param3 > 0.5f);
+                                    updateOutputs(state);
+                                }
+                                else {
+                                    // Zatrzymujemy obecny ruch i rozpoczynamy nowy
+                                    stepperX.stop();
+                                    stepperY.stop();
+
+                                    jogInProgress = executeJogMovement(
+                                        stepperX, stepperY,
+                                        cmd.param1, cmd.param2, cmd.param3,
+                                        config, state
+                                    );
+                                }
+                                break;
+
+                            case CommandType::STOP:
+                                stepperX.stop();
+                                stepperY.stop();
+                                jogInProgress = false;
+                                state.state = CNCState::IDLE;
+                                #ifdef DEBUG_CNC_TASK
+                                Serial.println("DEBUG CNC: Zatrzymano tryb JOG");
+                                #endif
+                                break;
+
+                            default:
+                                // Ignorujemy inne komendy w stanie JOG
+                                break;
+                        }
+                        break;
+
+                    case CNCState::HOMING:
+                        // W stanie HOMING obsługujemy tylko STOP
+                        if (cmd.type == CommandType::STOP) {
+                            stepperX.stop();
+                            stepperY.stop();
+                            homingInProgress = false;
+                            state.state = CNCState::IDLE;
+                            #ifdef DEBUG_CNC_TASK
+                            Serial.println("DEBUG CNC: Zatrzymano bazowanie");
+                            #endif
+                        }
+                        break;
+
+                    case CNCState::STOPPED:
+                    case CNCState::ERROR:
+                        // W stanach STOPPED i ERROR obsługujemy tylko RESET
+                        if (cmd.type == CommandType::RESET) {
+                            state.state = CNCState::IDLE;
+                            state.isPaused = false;
+                            state.jobProgress = 0.0f;
+                            state.currentLine = 0;
+                            state.jobRunTime = 0;
+                            state.hasError = false;
+                            state.errorCode = 0;
+                            processingStopped = false;
+                            processingPaused = false;
+                            #ifdef DEBUG_CNC_TASK
+                            Serial.println("DEBUG CNC: Zresetowano maszynę");
+                            #endif
+                        }
+                        break;
+                }
+
+                // Wymuś natychmiastową aktualizację stanu
+                lastStatusUpdateTime = 0;
+            }
+
+            lastCommandProcessTime = millis();
+        }
+
+        // 2. Wykonanie odpowiednich działań w zależności od stanu maszyny
+        switch (state.state) {
+            case CNCState::IDLE:
+                // W stanie IDLE nic nie robimy, czekamy na komendy
+                break;
+
+            case CNCState::RUNNING:
+                // W stanie RUNNING przetwarzamy plik G-code
+                if (!processingPaused && !processingStopped && state.currentProject.length() > 0) {
+                    // Jeśli to pierwszy przebieg po zmianie stanu, zaczynamy przetwarzanie
+                    if (state.jobProgress == 0.0f) {
+                        // Dodatkowe opóźnienie startowe z konfiguracji
+                        if (config.delayAfterStartup > 0) {
+                            vTaskDelay(pdMS_TO_TICKS(config.delayAfterStartup));
+                        }
+
+                        #ifdef DEBUG_CNC_TASK
+                        Serial.printf("DEBUG CNC: Rozpoczynam przetwarzanie pliku: %s\n",
+                            state.currentProject.c_str());
+                        #endif
+
+                        // Przetwarzanie pliku G-code
+                        processResult = processGCodeFile(
+                            state.currentProject,
+                            processingStopped,
+                            processingPaused,
+                            stepperX,
+                            stepperY,
+                            state
+                        );
+
+                        // Analiza wyniku
+                        switch (processResult) {
+                            case 0: // Sukces
+                                #ifdef DEBUG_CNC_TASK
+                                Serial.println("DEBUG CNC: Przetwarzanie zakończone sukcesem");
+                                #endif
+                                state.state = CNCState::IDLE;
+                                break;
+
+                            case 1: // Zatrzymano przez użytkownika
+                                #ifdef DEBUG_CNC_TASK
+                                Serial.println("DEBUG CNC: Przetwarzanie zatrzymane przez użytkownika");
+                                #endif
+                                state.state = CNCState::STOPPED;
+                                break;
+
+                            case 2: // Błąd
+                                #ifdef DEBUG_CNC_TASK
+                                Serial.println("DEBUG CNC: Błąd podczas przetwarzania");
+                                #endif
+                                state.state = CNCState::ERROR;
+                                state.hasError = true;
+                                state.errorCode = 1; // Ustawienie kodu błędu
+                                break;
+
+                            default:
+                                #ifdef DEBUG_CNC_TASK
+                                Serial.println("DEBUG CNC: Nieznany wynik przetwarzania");
+                                #endif
+                                state.state = CNCState::ERROR;
+                                state.hasError = true;
+                                state.errorCode = 2; // Inny kod błędu
+                                break;
+                        }
+
+                        // Zakończenie przetwarzania
+                        cuttingActive = false;
+                        state.hotWireOn = false;
+                        updateOutputs(state);
+                    }
+                }
+                break;
+
+            case CNCState::JOG:
+                // W stanie JOG sprawdzamy, czy ruch został zakończony
+                if (jogInProgress && stepperX.distanceToGo() == 0 && stepperY.distanceToGo() == 0) {
+                    jogInProgress = false;
+                    state.state = CNCState::IDLE;
+                    #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC: Ruch JOG zakończony");
+                    #endif
+                }
+
+                // Wykonanie ruchu
+                if (jogInProgress) {
+                    stepperX.run();
+                    stepperY.run();
+
+                    // Aktualizacja pozycji
+                    state.currentX = static_cast<float>(stepperX.currentPosition()) / config.xAxis.stepsPerMM;
+                    state.currentY = static_cast<float>(stepperY.currentPosition()) / config.yAxis.stepsPerMM;
+                }
+                break;
+
+            case CNCState::HOMING:
+                // W stanie HOMING sprawdzamy, czy bazowanie zostało zakończone
+                if (homingInProgress && stepperX.distanceToGo() == 0 && stepperY.distanceToGo() == 0) {
+                    homingInProgress = false;
+                    state.state = CNCState::IDLE;
+
+                    // Ustawienie pozycji bazowej
+                    stepperX.setCurrentPosition(0);
+                    stepperY.setCurrentPosition(0);
+                    state.currentX = 0.0f;
+                    state.currentY = 0.0f;
+
+                    #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC: Bazowanie zakończone");
+                    #endif
+                }
+
+                // Wykonanie ruchu bazowania
+                if (homingInProgress) {
+                    stepperX.run();
+                    stepperY.run();
+
+                    // Aktualizacja pozycji
+                    state.currentX = static_cast<float>(stepperX.currentPosition()) / config.xAxis.stepsPerMM;
+                    state.currentY = static_cast<float>(stepperY.currentPosition()) / config.yAxis.stepsPerMM;
+                }
+                break;
+
+            case CNCState::STOPPED:
+                // Zatrzymany - nic nie robimy, czekamy na RESET
+                break;
+
+            case CNCState::ERROR:
+                // Błąd - nic nie robimy, czekamy na RESET
+                break;
+        }
+
+        // 3. Aktualizacja stanu wyjść
+        updateOutputs(state);
+
+        // 4. Aktualizacja czasu pracy
+        if (state.state == CNCState::RUNNING && !state.isPaused) {
+            state.jobRunTime = millis() - state.jobStartTime;
+        }
+
+        // 5. Wysyłanie stanu maszyny przez kolejkę
+        if (millis() - lastStatusUpdateTime >= STATUS_UPDATE_INTERVAL) {
+            if (xQueueSend(stateQueue, &state, 0) == pdTRUE) {
+                #ifdef DEBUG_CNC_TASK
+                Serial.printf("DEBUG CNC: Stan wysłany. X=%.2f, Y=%.2f, Stan=%d\n",
+                    state.currentX, state.currentY, static_cast<int>(state.state));
+                #endif
+            }
+
+            lastStatusUpdateTime = millis();
+        }
+
+        // Krótka przerwa, aby zapobiec przekroczeniu czasu watchdoga
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
-/*-- Main Program --*/
+/*
+* ------------------------------------------------------------------------------------------------------------
+* --- Main Controller Program ---
+* ------------------------------------------------------------------------------------------------------------
+*/
+
 
 void setup() {
+    // Port szeregowy do debugowania
     Serial.begin(115200);
-    SPI.begin(CONFIG::SD_CLK_PIN, CONFIG::SD_MISO_PIN, CONFIG::SD_MOSI_PIN);
-    delay(200);
 
+    // SPI dla karty SD
+    SPI.begin(CONFIG::SD_CLK_PIN, CONFIG::SD_MISO_PIN, CONFIG::SD_MOSI_PIN);
+
+    delay(200); // Odczekanie chwili na poprawne uruchomienie protokołu SPI
+
+    // Ustawienie pinów dla wejść/wyjść kontrolowanych ręcznie - bez bibliotek
     pinMode(CONFIG::WIRE_RELAY_PIN, OUTPUT);
     digitalWrite(CONFIG::WIRE_RELAY_PIN, LOW);
     pinMode(CONFIG::FAN_RELAY_PIN, OUTPUT);
@@ -211,17 +601,18 @@ void setup() {
     stateQueue = xQueueCreate(5, sizeof(MachineState));
     commandQueue = xQueueCreate(10, sizeof(WebserverCommand));
 
+    // Stworzenie zadań
     Serial.println("Creating Control task...");
-    xTaskCreatePinnedToCore(taskControl,                    // Task function
-        "Control",                      // Task name
-        CONFIG::CONTROLTASK_STACK_SIZE, // Stack size
-        NULL,                           // Parameters
-        CONFIG::CONTROLTASK_PRIORITY,   // Priority
-        NULL,                           // Task handle
-        CONFIG::CORE_1                  // Core
+    xTaskCreatePinnedToCore(taskControl,    // Task function
+        "Control",                          // Task name
+        CONFIG::CONTROLTASK_STACK_SIZE,     // Stack size
+        NULL,                               // Parameters
+        CONFIG::CONTROLTASK_PRIORITY,       // Priority
+        NULL,                               // Task handle
+        CONFIG::CORE_1                      // Core
     );
 
-    delay(200);
+    delay(200); // Odczekanie chwili na poprawne uruchomienie pierwszego zadania
 
     Serial.println("Creating CNC task...");
     xTaskCreatePinnedToCore(taskCNC,
@@ -231,14 +622,19 @@ void setup() {
         CONFIG::CNCTASK_PRIORITY,
         NULL,
         CONFIG::CORE_0);
-    delay(200);
+
+    delay(200); // Odczekanie chwili na poprawne uruchomienie drugiego zadania
 }
 
 void loop() {
-    // Empty loop
+    // Brak potrzeby implementacji pętli głównej
 }
 
-/*-- MISCELLANEOUS FUNCTIONS --*/
+/*
+* ------------------------------------------------------------------------------------------------------------
+* --- MISCELLANEOUS FUNCTIONS ---
+* ------------------------------------------------------------------------------------------------------------
+*/
 
 void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager, ConfigManager* configManager) {
 
@@ -351,7 +747,7 @@ void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiMana
 }
 
 void connectToWiFi(WiFiManager* wifiManager) {
-    WiFiManagerStatus wifiManagerStatus {wifiManager->connect(WIFI_SSID, WIFI_PASSWORD, 10000)};
+    WiFiManagerStatus wifiManagerStatus { wifiManager->connect(WIFI_SSID, WIFI_PASSWORD, CONFIG::MAX_CONNECTION_TIME) };
     if (wifiManagerStatus == WiFiManagerStatus::OK) {
         Serial.println("STATUS: Connected to WiFi.");
     }
@@ -371,16 +767,16 @@ void startWebServer(WebServerManager* webServerManager) {
 }
 
 float getParameter(const String& line, char param) {
-    int index {line.indexOf(param)};
+    int index { line.indexOf(param) };
     if (index == -1)
         return NAN;
 
     // Wyznaczanie początku tesktu z parametrem
-    int valueStart {index + 1};
-    int valueEnd {static_cast<int>(line.length())};
+    int valueStart { index + 1 };
+    int valueEnd { static_cast<int>(line.length()) };
 
     // Wyznaczanie końca tekstu z parametrem (następna spacja lub koniec linii)
-    for (int i {valueStart}; i < static_cast<int>(line.length()); ++i) {
+    for (int i { valueStart }; i < static_cast<int>(line.length()); ++i) {
         if (line[i] == ' ' || line[i] == '\t') {
             valueEnd = i;
             break;
@@ -395,7 +791,7 @@ bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepper
     Serial.printf("DEBUG CNC GCODE: Processing: %s\n", line.c_str());
     #endif
 
-    // Usuwanie białcyh znaków i pustych linii
+    // Usuwanie białych znaków i pustych linii
     line.trim();
     if (line.length() == 0)
         return true;
@@ -430,10 +826,8 @@ bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepper
                     float newY { isnan(targetY) ? state.currentY : (state.relativeMode ? state.currentY + targetY : targetY) };
 
                     // Oblicz prędkość ruchu w zależności od komendy ruchu
-                    float moveSpeedX { (gCode == 0) ? config.xAxis.rapidFeedRate : (config.useGCodeFeedRate && !isnan(feedRate)) ? min(feedRate, config.xAxis.workFeedRate)
-                                                                                                                               : config.xAxis.workFeedRate };
-                    float moveSpeedY { (gCode == 0) ? config.yAxis.rapidFeedRate : (config.useGCodeFeedRate && !isnan(feedRate)) ? min(feedRate, config.yAxis.workFeedRate)
-                                                                                                                               : config.yAxis.workFeedRate };
+                    float moveSpeedX { (gCode == 0) ? config.xAxis.rapidFeedRate : (config.useGCodeFeedRate && !isnan(feedRate)) ? min(feedRate, config.xAxis.workFeedRate) : config.xAxis.workFeedRate };
+                    float moveSpeedY { (gCode == 0) ? config.yAxis.rapidFeedRate : (config.useGCodeFeedRate && !isnan(feedRate)) ? min(feedRate, config.yAxis.workFeedRate) : config.yAxis.workFeedRate };
 
                     // Oblicz ruch w krokach
                     long targetStepsX { static_cast<long>(newX * config.xAxis.stepsPerMM) };
@@ -709,4 +1103,54 @@ uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopC
         #endif
         return 0; // Sukces
     }
+}
+
+bool executeJogMovement(AccelStepper& stepperX, AccelStepper& stepperY,
+    float xOffset, float yOffset, float speed,
+    const MachineConfig& config, MachineState& state) {
+    #ifdef DEBUG_CNC_TASK
+    Serial.printf("DEBUG CNC: JOG X=%.2f, Y=%.2f, Prędkość=%.2f\n",
+        xOffset, yOffset, speed);
+    #endif
+
+    // Oblicz przesunięcie w krokach
+    long stepsX = static_cast<long>(xOffset * config.xAxis.stepsPerMM);
+    long stepsY = static_cast<long>(yOffset * config.yAxis.stepsPerMM);
+
+    // Ustaw prędkość (konwersja mm/min na kroki/s)
+    float speedX = (speed / 60.0f) * config.xAxis.stepsPerMM;
+    float speedY = (speed / 60.0f) * config.yAxis.stepsPerMM;
+
+    stepperX.setMaxSpeed(speedX);
+    stepperY.setMaxSpeed(speedY);
+
+    // Ustaw przyspieszenie
+    stepperX.setAcceleration(config.xAxis.workAcceleration * config.xAxis.stepsPerMM);
+    stepperY.setAcceleration(config.yAxis.workAcceleration * config.yAxis.stepsPerMM);
+
+    // Ustaw ruch względny
+    stepperX.move(stepsX);
+    stepperY.move(stepsY);
+
+    return true;
+}
+
+bool executeHomingSequence(AccelStepper& stepperX, AccelStepper& stepperY,
+    const MachineConfig& config, MachineState& state) {
+    #ifdef DEBUG_CNC_TASK
+    Serial.println("DEBUG CNC: Rozpoczęcie procedury bazowania");
+    #endif
+
+    // Ustaw prędkość i przyspieszenie dla bazowania (niższe niż normalne)
+    stepperX.setMaxSpeed(config.xAxis.workFeedRate / 60.0f * config.xAxis.stepsPerMM / 2);
+    stepperY.setMaxSpeed(config.yAxis.workFeedRate / 60.0f * config.yAxis.stepsPerMM / 2);
+    stepperX.setAcceleration(config.xAxis.workAcceleration * config.xAxis.stepsPerMM / 2);
+    stepperY.setAcceleration(config.yAxis.workAcceleration * config.yAxis.stepsPerMM / 2);
+
+    // TODO: ZAIMPLEMENTOWAĆ BAZOWANIE, TYMCZASOWO USTAWIANA JEST POZYCJA 0,0
+    stepperX.setCurrentPosition(0);
+    stepperY.setCurrentPosition(0);
+    // TODO: ZAIMPLEMENTOWAĆ BAZOWANIE, TYMCZASOWO USTAWIANA JEST POZYCJA 0,0
+
+    return true;
 }
