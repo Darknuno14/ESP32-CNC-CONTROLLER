@@ -9,7 +9,7 @@
 #include "SDManager.h"
 #include "ConfigManager.h"
 
-enum class WebServerStatus{
+enum class WebServerStatus {
     OK,
     ALREADY_INITIALIZED,
     NOT_INITIALIZED,
@@ -19,24 +19,24 @@ enum class WebServerStatus{
 };
 
 class WebServerManager {
-private:
+    private:
 
-    AsyncWebServer* server {nullptr};
-    AsyncEventSource* events {nullptr};
+    AsyncWebServer* server { nullptr };
+    AsyncEventSource* events { nullptr };
 
-    SDCardManager* sdManager {nullptr};
-    ConfigManager* configManager  {nullptr};
+    SDCardManager* sdManager { nullptr };
+    ConfigManager* configManager { nullptr };
 
     QueueHandle_t commandQueue; // Zasada Inversion of Control
 
     // Track initialization status
-    bool serverInitialized {false};
+    bool serverInitialized { false };
 
     // Track events initialization status
-    bool eventsInitialized {false};
+    bool eventsInitialized { false };
 
     // Track server startup status
-    bool serverStarted {false};
+    bool serverStarted { false };
 
     // Sets up all server routes and handlers
     void setupRoutes();
@@ -44,8 +44,8 @@ private:
     void setupConfigRoutes();
     void setupJogRoutes();
     void setupProjectsRoutes();
-   
-public:
+
+    public:
 
     // Construct a new Web Server Manager Pointer to initialized SD card manager
     WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue);
@@ -62,11 +62,11 @@ public:
     // Check if the server has been started
     // true = server has been started
     bool isServerStarted();
-     
+
     // Check if the server has been initialized
     // true = server has been initialized
     bool isServerInitialized();
-    
+
     // Check if the events have been initialized
     // true = events have been initialized
     bool isEventsInitialized();

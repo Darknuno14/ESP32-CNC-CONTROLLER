@@ -16,14 +16,15 @@ WiFiManagerStatus WiFiManager::connect(const char* ssid, const char* password, u
         Serial.println("Connected to WiFi, IP address:");
         Serial.println(WiFi.localIP());
         return WiFiManagerStatus::OK;
-    } else {
+    }
+    else {
         Serial.println("Connection failed");
         return WiFiManagerStatus::OK;
     }
 }
 
 bool WiFiManager::waitForConnection(unsigned long timeout) {
-   unsigned long startTime = millis();
+    unsigned long startTime = millis();
     unsigned long printTime = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout) {
         if (millis() - printTime >= 500) {

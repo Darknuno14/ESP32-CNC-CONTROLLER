@@ -13,7 +13,7 @@ struct MachineConfig {
     struct MotorConfig {
         float stepsPerMM {};        // Ilość kroków silnika na milimetr ruchu 
         float workFeedRate {};       // Maksymalna prędkość ruchu (G1) [mm/min]
-        float workAcceleration {} ;   // Maksymalne przyspieszenie (G1) [mm/s^2]
+        float workAcceleration {};   // Maksymalne przyspieszenie (G1) [mm/s^2]
         float rapidFeedRate {};     // Prędkość ruchu szybkiego (G0) [mm/min]
         float rapidAcceleration {}; // Przyspieszenie ruchu szybkiego (G0)[mm/s^2]
     };
@@ -40,47 +40,47 @@ enum class ConfigManagerStatus {
 };
 
 class ConfigManager {
-private:
-    
+    private:
+
     SDCardManager* sdManager {};
-    
+
     MachineConfig config {};
-    
+
     // Mutex do synchronizacji dostępu do konfiguracji
     SemaphoreHandle_t configMutex {};
-    
-    // Flaga wskazująca, czy konfiguracja została załadowana
-    bool configLoaded {false};
 
-public:
+    // Flaga wskazująca, czy konfiguracja została załadowana
+    bool configLoaded { false };
+
+    public:
     // Konstruktor
     ConfigManager(SDCardManager* sdManager);
-    
+
     // Destruktor
     ~ConfigManager();
-    
+
     // Inicjalizacja managera konfiguracji
     ConfigManagerStatus init();
 
     // Pobranie bieżącej konfiguracji
     MachineConfig getConfig();
-    
+
     // Wczytanie konfiguracji z pliku
     ConfigManagerStatus loadConfig();
-    
+
     // Zapisanie konfiguracji do pliku
     ConfigManagerStatus saveConfig();
-    
+
     // Ustawienie całej konfiguracji
     ConfigManagerStatus setConfig(const MachineConfig& newConfig);
-    
+
     // Aktualizacja pojedynczego parametru
     template<typename T>
     ConfigManagerStatus updateParameter(const std::string& paramName, T value);
 
     // Serializacja konfiguracji do JSON
     String configToJson();
-    
+
     // Deserializacja konfiguracji z JSON
     ConfigManagerStatus configFromJson(const String& jsonString);
 

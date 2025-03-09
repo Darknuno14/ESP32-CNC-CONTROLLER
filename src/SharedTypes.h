@@ -16,9 +16,9 @@ enum class CommandType {
 
 struct WebserverCommand {
     CommandType type;
-    float param1 {0}; 
-    float param2 {0}; 
-    float param3 {0};
+    float param1 { 0 };
+    float param2 { 0 };
+    float param3 { 0 };
 };
 
 enum class CNCState {
@@ -32,28 +32,28 @@ enum class CNCState {
 
 struct MachineState {
     // Pozycja i ruch
-    float currentX {0.0f};
-    float currentY {0.0f};
-    bool relativeMode {false};  // False = absolute positioning, True = relative
-    
+    float currentX { 0.0f };
+    float currentY { 0.0f };
+    bool relativeMode { false };  // False = absolute positioning, True = relative
+
     // Stan operacyjny
-    CNCState state {CNCState::IDLE};
-    bool isPaused {false};
-    
+    CNCState state { CNCState::IDLE };
+    bool isPaused { false };
+
     // Stan urządzeń
-    bool hotWireOn {false};  // Stan drutu
-    bool fanOn {false};      // Stan wentylatora
-    
+    bool hotWireOn { false };  // Stan drutu
+    bool fanOn { false };      // Stan wentylatora
+
     // Informacje o zadaniu
     std::string currentProject {};
-    float jobProgress {0.0f};  // 0-100%
-    int currentLine {0};       // Aktualnie przetwarzana linia G-code
-    
+    float jobProgress { 0.0f };  // 0-100%
+    int currentLine { 0 };       // Aktualnie przetwarzana linia G-code
+
     // Statystyki
-    unsigned long jobStartTime {0};  // Czas rozpoczęcia zadania (millis)
-    unsigned long jobRunTime {0};    // Czas pracy (ms)
-    
+    unsigned long jobStartTime { 0 };  // Czas rozpoczęcia zadania (millis)
+    unsigned long jobRunTime { 0 };    // Czas pracy (ms)
+
     // Flagi błędów
-    bool hasError {false};
-    uint8_t errorCode {0};
+    bool hasError { false };
+    uint8_t errorCode { 0 };
 };

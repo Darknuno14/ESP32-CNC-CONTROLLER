@@ -10,7 +10,7 @@ enum class FSManagerStatus {
 // Menages the LittleFS filesystem operations for the ESP32 CNC Controller.
 // It handles mounting, initialization and provides filesystem access for web server files.
 class FSManager {
-public:
+    public:
 
     // Initializes FSManager instance without mounting the filesystem.
     // Call init() separately to mount the filesystem.
@@ -19,4 +19,4 @@ public:
     // This function attempts to mount the LittleFS filesystem.
     // The filesystem is crucial for storing web server files (HTML, JS, CSS).
     FSManagerStatus init();
-}; 
+};

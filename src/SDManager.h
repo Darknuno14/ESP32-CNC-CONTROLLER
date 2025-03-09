@@ -14,32 +14,32 @@ enum class SDManagerStatus {
     CARD_NOT_INITIALIZED,
     SD_BUSY,
     FILE_NOT_FOUND,
-    UNKNOWN_ERROR  
+    UNKNOWN_ERROR
 };
 
 // Klasa zarządza kartą SD, która służy jako miejsce przechowywania dla plików projektów i konfiguracji.
 class SDCardManager {
-private:
+    private:
     // Śledzi stan inicjalizacji karty
-    bool cardInitialized {false};
+    bool cardInitialized { false };
 
     // Tworzy katalog na karcie SD
     // true = tworzenie katalogu powiodło się
     bool createDirectory(const std::string& path);
 
     // Przechowuje nazwy plików projektów
-    std::vector<std::string> projectFiles {};  
+    std::vector<std::string> projectFiles {};
 
     // Mutex dla dostępu do karty SD
     SemaphoreHandle_t sdMutex {};
 
     // Śledzi, czy projekt jest wybrany
-    bool projectIsSelected {false};
-    
+    bool projectIsSelected { false };
+
     // Nazwa pliku z wybranym projektem 
     std::string selectedProject {};
 
-public:
+    public:
 
     // Domyślny konstruktor dla SDCardManager
     SDCardManager() = default;
@@ -53,14 +53,14 @@ public:
 
     // Zwalnia kartę SD, aby inne zadania mogły z niej korzystać
     void giveSD();
-    
+
     // Sprawdzenie czy menadżer jest zainicjalizowany
     // true = karta SD jest zainicjalizowana
     bool isCardInitialized() const;
 
     // Wczytanie listy plików projektów
     SDManagerStatus updateProjectList();
-    
+
     // Get the Project Files vector
     SDManagerStatus getProjectFiles(std::vector<std::string>& projectList);
 
