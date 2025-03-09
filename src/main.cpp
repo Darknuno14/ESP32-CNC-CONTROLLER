@@ -54,14 +54,14 @@ void taskControl(void * parameter) {
     startWebServer(webServerManager);
 
     // Bufor na przychodzący stan maszyny
-    MachineState currentState;
+    MachineState currentState {};
 
     // Przechowujemy ostatni stan maszyny
-    MachineState lastState;
+    MachineState lastState {};
     memset(&lastState, 0, sizeof(MachineState));
 
-    unsigned long lastWebUpdateTime = 0;
-    constexpr unsigned long WEB_UPDATE_INTERVAL = 200; // ms
+    unsigned long lastWebUpdateTime {0};
+    constexpr unsigned long WEB_UPDATE_INTERVAL {200}; // ms
     
     while (true) {
         // 1. Odbieranie statusu maszyny z kolejki
@@ -72,7 +72,7 @@ void taskControl(void * parameter) {
             #endif
             
             // Zapamiętaj ostatni stan
-            memcpy(&lastState, &currentState, sizeof(MachineState));
+            lastState = currentState; 
             
             // Wysyłaj aktualizacje przez EventSource jeśli jest istotna zmiana lub minął interwał
             if (millis() - lastWebUpdateTime > WEB_UPDATE_INTERVAL || 

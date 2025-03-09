@@ -34,7 +34,7 @@ constexpr uint8_t DIR_Y_PIN {26};        // Direction
 
 // ============================================================================
 // Task configuration
-constexpr uint32_t CONTROLTASK_STACK_SIZE {8192}; // The size of the task stack specified as the number of bytes.
+constexpr uint32_t CONTROLTASK_STACK_SIZE {16384}; // The size of the task stack specified as the number of bytes.
 constexpr uint32_t CNCTASK_STACK_SIZE {8192};
 constexpr uint8_t CONTROLTASK_PRIORITY {2}; // The priority at which the task should run
 constexpr uint8_t CNCTASK_PRIORITY {1};

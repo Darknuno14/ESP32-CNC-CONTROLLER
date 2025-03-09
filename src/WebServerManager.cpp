@@ -208,11 +208,11 @@ void WebServerManager::setupIndexRoutes() {
             Serial.println("DEBUG SERVER STATUS: Machine status requested");
         #endif
         
-        static MachineState lastKnownState;
-        static unsigned long lastStateUpdate = 0;
+        static MachineState lastKnownState {};
+        static unsigned long lastStateUpdate {0};
         
         // Przygotowanie JSON z danymi
-        DynamicJsonDocument doc(CONFIG::JSON_DOC_SIZE);
+        JsonDocument doc {};
         
         // Stan maszyny
         doc["state"] = static_cast<int>(lastKnownState.state);
@@ -561,7 +561,7 @@ void WebServerManager::setupProjectsRoutes() {
         }
     
         // Odpowiedź JSON ze szczegółowymi informacjami
-        DynamicJsonDocument doc(256);
+        JsonDocument doc {};
         doc["success"] = sdSuccess;
         doc["configSuccess"] = configSuccess;
         doc["message"] = message;

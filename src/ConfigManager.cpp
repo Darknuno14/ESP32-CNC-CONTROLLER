@@ -129,11 +129,11 @@ ConfigManagerStatus ConfigManager::setConfig(const MachineConfig& newConfig) {
 }
 
 String ConfigManager::configToJson() {
-    DynamicJsonDocument doc(CONFIG::JSON_DOC_SIZE);
+    JsonDocument doc {};
    
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
         // Parametry osi X
-        JsonObject xAxis = doc.createNestedObject("xAxis");
+        JsonObject xAxis = doc["xAxis"].to<JsonObject>();
         xAxis["stepsPerMM"] = config.xAxis.stepsPerMM;
         xAxis["workFeedRate"] = config.xAxis.workFeedRate;
         xAxis["workAcceleration"] = config.xAxis.workAcceleration;
@@ -141,7 +141,7 @@ String ConfigManager::configToJson() {
         xAxis["rapidAcceleration"] = config.xAxis.rapidAcceleration;
         
         // Parametry osi Y
-        JsonObject yAxis = doc.createNestedObject("yAxis");
+        JsonObject yAxis = doc["yAxis"].to<JsonObject>();
         yAxis["stepsPerMM"] = config.yAxis.stepsPerMM;
         yAxis["workFeedRate"] = config.yAxis.workFeedRate;
         yAxis["workAcceleration"] = config.yAxis.workAcceleration;
@@ -165,7 +165,7 @@ String ConfigManager::configToJson() {
 }
 
 ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
-    DynamicJsonDocument doc(CONFIG::JSON_DOC_SIZE);
+    JsonDocument doc {};
     
     DeserializationError error = deserializeJson(doc, jsonString);
     if (error) {
@@ -178,31 +178,31 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
     
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
         // Parametry dla osi X
-        if (doc.containsKey("xAxis")) {
+        if (doc["xAxis"].is<JsonObject>()) {
             JsonObject xAxis = doc["xAxis"];
-            if (xAxis.containsKey("stepsPerMM")) config.xAxis.stepsPerMM = xAxis["stepsPerMM"].as<float>();
-            if (xAxis.containsKey("workFeedRate")) config.xAxis.workFeedRate = xAxis["workFeedRate"].as<float>();
-            if (xAxis.containsKey("workAcceleration")) config.xAxis.workAcceleration = xAxis["workAcceleration"].as<float>();
-            if (xAxis.containsKey("rapidFeedRate")) config.xAxis.rapidFeedRate = xAxis["rapidFeedRate"].as<float>();
-            if (xAxis.containsKey("rapidAcceleration")) config.xAxis.rapidAcceleration = xAxis["rapidAcceleration"].as<float>();
+            if (xAxis["stepsPerMM"].is<float>()) config.xAxis.stepsPerMM = xAxis["stepsPerMM"].as<float>();
+            if (xAxis["workFeedRate"].is<float>()) config.xAxis.workFeedRate = xAxis["workFeedRate"].as<float>();
+            if (xAxis["workAcceleration"].is<float>()) config.xAxis.workAcceleration = xAxis["workAcceleration"].as<float>();
+            if (xAxis["rapidFeedRate"].is<float>()) config.xAxis.rapidFeedRate = xAxis["rapidFeedRate"].as<float>();
+            if (xAxis["rapidAcceleration"].is<float>()) config.xAxis.rapidAcceleration = xAxis["rapidAcceleration"].as<float>();
         }
         
         // Parametry dla osi Y
-        if (doc.containsKey("yAxis")) {
+        if (doc["yAxis"].is<JsonObject>()) {
             JsonObject yAxis = doc["yAxis"];
-            if (yAxis.containsKey("stepsPerMM")) config.yAxis.stepsPerMM = yAxis["stepsPerMM"].as<float>();
-            if (yAxis.containsKey("workFeedRate")) config.yAxis.workFeedRate = yAxis["workFeedRate"].as<float>();
-            if (yAxis.containsKey("workAcceleration")) config.yAxis.workAcceleration = yAxis["workAcceleration"].as<float>();
-            if (yAxis.containsKey("rapidFeedRate")) config.yAxis.rapidFeedRate = yAxis["rapidFeedRate"].as<float>();
-            if (yAxis.containsKey("rapidAcceleration")) config.yAxis.rapidAcceleration = yAxis["rapidAcceleration"].as<float>();
+            if (yAxis["stepsPerMM"].is<float>()) config.yAxis.stepsPerMM = yAxis["stepsPerMM"].as<float>();
+            if (yAxis["workFeedRate"].is<float>()) config.yAxis.workFeedRate = yAxis["workFeedRate"].as<float>();
+            if (yAxis["workAcceleration"].is<float>()) config.yAxis.workAcceleration = yAxis["workAcceleration"].as<float>();
+            if (yAxis["rapidFeedRate"].is<float>()) config.yAxis.rapidFeedRate = yAxis["rapidFeedRate"].as<float>();
+            if (yAxis["rapidAcceleration"].is<float>()) config.yAxis.rapidAcceleration = yAxis["rapidAcceleration"].as<float>();
         }
         
         // Pozostałe parametry
-        if (doc.containsKey("useGCodeFeedRate")) config.useGCodeFeedRate = doc["useGCodeFeedRate"].as<bool>();
-        if (doc.containsKey("delayAfterStartup")) config.delayAfterStartup = doc["delayAfterStartup"].as<int>();
-        if (doc.containsKey("deactivateESTOP")) config.deactivateESTOP = doc["deactivateESTOP"].as<bool>();
-        if (doc.containsKey("deactivateLimitSwitches")) config.deactivateLimitSwitches = doc["deactivateLimitSwitches"].as<bool>();
-        if (doc.containsKey("limitSwitchType")) config.limitSwitchType = doc["limitSwitchType"].as<uint8_t>();
+        if (doc["useGCodeFeedRate"].is<bool>()) config.useGCodeFeedRate = doc["useGCodeFeedRate"].as<bool>();
+        if (doc["delayAfterStartup"].is<int>()) config.delayAfterStartup = doc["delayAfterStartup"].as<int>();
+        if (doc["deactivateESTOP"].is<bool>()) config.deactivateESTOP = doc["deactivateESTOP"].as<bool>();
+        if (doc["deactivateLimitSwitches"].is<bool>()) config.deactivateLimitSwitches = doc["deactivateLimitSwitches"].as<bool>();
+        if (doc["limitSwitchType"].is<uint8_t>()) config.limitSwitchType = doc["limitSwitchType"].as<uint8_t>();
         
         xSemaphoreGive(configMutex);
         
