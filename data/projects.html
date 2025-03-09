@@ -1,180 +1,287 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ESP32 CNC - Projects</title>
-  <link rel="icon" href="data:,">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-  <link href="css/styles.css" rel="stylesheet">
-</head>
-<body>
-  <div class="container">
-    <h1 class="mt-3 mb-3">ESP32 CNC - Projects</h1>
-    
-    <!-- Navigation menu -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
-      <div class="container-fluid">
-        <a class="navbar-brand" href="/">ESP32 CNC</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav">
-            <li class="nav-item">
-              <a class="nav-link" href="/">Home</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link active" href="/projects.html">Projects</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/jog.html">Control</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/config.html">Configuration</a>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </nav>
-    
-    <!-- Status message container -->
-    <div id="message-container" class="alert" style="display: none;"></div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ESP32 CNC - Projects</title>
+    <link rel="icon" href="data:," />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css"
+      rel="stylesheet"
+    />
+    <link href="css/styles.css" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="mt-3 mb-3">ESP32 CNC - Projects</h1>
 
-    <!-- SD Card Status -->
-    <div class="d-flex align-items-center mb-3">
-      <div class="d-flex align-items-center">
-        <span class="me-2">SD Card:</span>
-        <div id="sd-status" class="status-indicator me-2"></div>
-        <span id="sd-status-text">Unknown</span>
-      </div>
-      <button type="button" class="btn btn-secondary btn-sm ms-3" onclick="reinitializeSD()">
-        Re-initialize SD
-      </button>
-    </div>
+      <!-- Navigation menu -->
+      <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
+        <div class="container-fluid">
+          <a class="navbar-brand" href="/">ESP32 CNC</a>
+          <button
+            class="navbar-toggler"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#navbarNav"
+          >
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav">
+              <li class="nav-item">
+                <a class="nav-link" href="/">Home</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link active" href="/projects.html">Projects</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="/jog.html">Control</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="/config.html">Configuration</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </nav>
 
-    <!-- Available Files Section -->
-    <div class="card mb-4">
-      <div class="card-header">
-        <h2 class="h5 mb-0">Available G-Code Files</h2>
-      </div>
-      <div class="card-body">
-        <div class="d-flex justify-content-between mb-3">
-          <button type="button" class="btn btn-secondary" onclick="refreshFileList()">
-            <i class="bi bi-arrow-clockwise"></i> Refresh Files
-          </button>
-          <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
-            <i class="bi bi-upload"></i> Upload New File
-          </button>
+      <!-- Status message container -->
+      <div id="message-container" class="alert" style="display: none"></div>
+
+      <!-- SD Card Status -->
+      <div class="d-flex align-items-center mb-3">
+        <div class="d-flex align-items-center">
+          <span class="me-2">SD Card:</span>
+          <div id="sd-status" class="status-indicator me-2"></div>
+          <span id="sd-status-text">Unknown</span>
         </div>
-        
-        <div class="table-responsive">
-          <table class="table table-hover project-table">
-            <thead>
-              <tr>
-                <th>File Name</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="file-list">
-              <tr>
-                <td colspan="2" class="text-center">Loading files...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        
-        <div class="alert alert-info" id="no-files-message" style="display: none;">
-          No G-code files found on SD card. Upload new files using the button above.
-        </div>
-      </div>
-    </div>
-    
-    <!-- G-Code Preview Section -->
-    <div class="card mb-4">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h2 class="h5 mb-0">G-Code Preview</h2>
-        <button id="visualizeBtn" class="btn btn-sm btn-secondary" onclick="visualizeSelectedGCode()">
-          <i class="bi bi-eye"></i> Preview Selected File
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm ms-3"
+          onclick="reinitializeSD()"
+        >
+          Re-initialize SD
         </button>
       </div>
-      <div class="card-body">
-        <p id="selected-file" class="mb-3">No file selected</p>
-        <div class="gcode-preview-container">
-          <canvas id="canvas" width="800" height="600" style="width: 100%; height: auto; border: 1px solid #ccc;"></canvas>
+
+      <!-- Available Files Section -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h2 class="h5 mb-0">Available G-Code Files</h2>
         </div>
-        
-        <div class="d-flex justify-content-center mt-3">
-          <div class="btn-group">
-            <button id="startBtn" type="button" class="btn btn-success">
-              <i class="bi bi-play-fill"></i> START
+        <div class="card-body">
+          <div class="d-flex justify-content-between mb-3">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick="refreshFileList()"
+            >
+              <i class="bi bi-arrow-clockwise"></i> Refresh Files
             </button>
-            <button id="pauseBtn" type="button" class="btn btn-warning">
-              <i class="bi bi-pause-fill"></i> PAUSE
+            <button
+              type="button"
+              class="btn btn-primary"
+              data-bs-toggle="modal"
+              data-bs-target="#uploadModal"
+            >
+              <i class="bi bi-upload"></i> Upload New File
             </button>
-            <button id="stopBtn" type="button" class="btn btn-danger">
-              <i class="bi bi-stop-fill"></i> STOP
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-hover project-table">
+              <thead>
+                <tr>
+                  <th>File Name</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="file-list">
+                <tr>
+                  <td colspan="2" class="text-center">Loading files...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div
+            class="alert alert-info"
+            id="no-files-message"
+            style="display: none"
+          >
+            No G-code files found on SD card. Upload new files using the button
+            above.
+          </div>
+        </div>
+      </div>
+
+      <!-- G-Code Preview Section -->
+      <div class="card mb-4">
+        <div
+          class="card-header d-flex justify-content-between align-items-center"
+        >
+          <h2 class="h5 mb-0">G-Code Preview</h2>
+          <button
+            id="visualizeBtn"
+            class="btn btn-sm btn-secondary"
+            onclick="visualizeSelectedGCode()"
+          >
+            <i class="bi bi-eye"></i> Preview Selected File
+          </button>
+        </div>
+        <div class="card-body">
+          <p id="selected-file" class="mb-3">No file selected</p>
+          <div class="gcode-preview-container">
+            <canvas
+              id="canvas"
+              width="800"
+              height="600"
+              style="width: 100%; height: auto; border: 1px solid #ccc"
+            ></canvas>
+          </div>
+
+          <div class="d-flex justify-content-center mt-3">
+            <div class="btn-group">
+              <button id="startBtn" type="button" class="btn btn-success">
+                <i class="bi bi-play-fill"></i> START
+              </button>
+              <button id="pauseBtn" type="button" class="btn btn-warning">
+                <i class="bi bi-pause-fill"></i> PAUSE
+              </button>
+              <button id="stopBtn" type="button" class="btn btn-danger">
+                <i class="bi bi-stop-fill"></i> STOP
+              </button>
+              <button id="resetBtn" type="button" class="btn btn-secondary">
+                <i class="bi bi-arrow-counterclockwise"></i> RESET
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div
+      class="modal fade"
+      id="uploadModal"
+      tabindex="-1"
+      aria-labelledby="uploadModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="uploadModalLabel">
+              Upload G-Code File
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <form id="uploadForm" enctype="multipart/form-data">
+              <div class="mb-3">
+                <label for="fileInput" class="form-label">Select File</label>
+                <input
+                  type="file"
+                  name="file"
+                  id="fileInput"
+                  class="form-control"
+                  accept=".gcode,.nc,.tap,.cnc,.txt"
+                />
+              </div>
+              <div id="progress-container" style="display: none">
+                <div class="progress mb-3">
+                  <div
+                    id="progress-bar"
+                    class="progress-bar"
+                    role="progressbar"
+                    style="width: 0%"
+                    aria-valuenow="0"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                  >
+                    0%
+                  </div>
+                </div>
+              </div>
+              <div
+                id="upload-message"
+                class="alert mt-3"
+                style="display: none"
+              ></div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Close
             </button>
-            <button id="resetBtn" type="button" class="btn btn-secondary">
-              <i class="bi bi-arrow-counterclockwise"></i> RESET
+            <button
+              type="button"
+              class="btn btn-primary"
+              onclick="uploadFile()"
+            >
+              Upload
             </button>
           </div>
         </div>
       </div>
     </div>
-  </div>
-  
-  <!-- Upload Modal -->
-  <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="uploadModalLabel">Upload G-Code File</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <form id="uploadForm" enctype="multipart/form-data">
-            <div class="mb-3">
-              <label for="fileInput" class="form-label">Select File</label>
-              <input type="file" name="file" id="fileInput" class="form-control" accept=".gcode,.nc,.tap,.cnc,.txt">
-            </div>
-            <div id="progress-container" style="display: none;">
-              <div class="progress mb-3">
-                <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
-              </div>
-            </div>
-            <div id="upload-message" class="alert mt-3" style="display: none;"></div>
-          </form>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-          <button type="button" class="btn btn-primary" onclick="uploadFile()">Upload</button>
-        </div>
-      </div>
-    </div>
-  </div>
-  
-  <!-- G-Code View Modal -->
-  <div class="modal fade" id="gCodeModal" tabindex="-1" aria-labelledby="gCodeModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="gCodeModalLabel">G-Code Content</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <textarea id="gCodeContent" class="form-control font-monospace" style="height: 400px; width: 100%;" readonly></textarea>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/common.js"></script>
-  <script src="js/projects.js"></script>
-</body>
+    <!-- G-Code View Modal -->
+    <div
+      class="modal fade"
+      id="gCodeModal"
+      tabindex="-1"
+      aria-labelledby="gCodeModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="gCodeModalLabel">G-Code Content</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <textarea
+              id="gCodeContent"
+              class="form-control font-monospace"
+              style="height: 400px; width: 100%"
+              readonly
+            ></textarea>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/common.js"></script>
+    <script src="js/projects.js"></script>
+  </body>
 </html>

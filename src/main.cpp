@@ -25,12 +25,13 @@ SDCardManager* sdManager { new SDCardManager() };
 ConfigManager* configManager { new ConfigManager(sdManager) };
 
 // Kolejki do komunikacji między zadaniami
-QueueHandle_t stateQueue;   // Od CNC do Control (informacje o stanie)
-QueueHandle_t commandQueue; // Od Control do CNC (komendy sterujące)
+QueueHandle_t stateQueue {};   // Od CNC do Control (informacje o stanie)
+QueueHandle_t commandQueue {}; // Od Control do CNC (komendy sterujące)
 
 /* --FUNCTION PROTOTYPES-- */
 
-void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager, WebServerManager* webServerManager, ConfigManager* configManager);
+void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiManager* wifiManager,
+    WebServerManager* webServerManager, ConfigManager* configManager);
 void connectToWiFi(WiFiManager* wifiManager);
 void startWebServer(WebServerManager* webServerManager);
 float getParameter(const String& line, char param);
@@ -123,7 +124,7 @@ void taskCNC(void* parameter) {
     state.currentY = 0.0f;
     state.jobProgress = 0.0f;
     state.currentLine = 0;
-state.jobStartTime = 0;
+    state.jobStartTime = 0;
     state.jobRunTime = 0;
     state.hasError = false;
     state.errorCode = 0;
@@ -186,7 +187,7 @@ state.jobStartTime = 0;
     WebserverCommand cmd {};
 
     // Wynik ostatniego przetwarzania G-code
-    uint8_t processResult = 0;
+    uint8_t processResult { 0 };
 
     while (true) {
         // Krótkie opóźnienie, aby zapobiec przekroczeniu czasu watchdoga i umożliwić działanie innych zadań
@@ -350,7 +351,7 @@ void initializeManagers(FSManager* fsManager, SDCardManager* sdManager, WiFiMana
 }
 
 void connectToWiFi(WiFiManager* wifiManager) {
-    WiFiManagerStatus wifiManagerStatus = wifiManager->connect(WIFI_SSID, WIFI_PASSWORD, 10000);
+    WiFiManagerStatus wifiManagerStatus {wifiManager->connect(WIFI_SSID, WIFI_PASSWORD, 10000)};
     if (wifiManagerStatus == WiFiManagerStatus::OK) {
         Serial.println("STATUS: Connected to WiFi.");
     }
@@ -370,16 +371,16 @@ void startWebServer(WebServerManager* webServerManager) {
 }
 
 float getParameter(const String& line, char param) {
-    int index = line.indexOf(param);
+    int index {line.indexOf(param)};
     if (index == -1)
         return NAN;
 
     // Wyznaczanie początku tesktu z parametrem
-    int valueStart = index + 1;
-    int valueEnd = static_cast<int>(line.length());
+    int valueStart {index + 1};
+    int valueEnd {static_cast<int>(line.length())};
 
     // Wyznaczanie końca tekstu z parametrem (następna spacja lub koniec linii)
-    for (int i = valueStart; i < static_cast<int>(line.length()); ++i) {
+    for (int i {valueStart}; i < static_cast<int>(line.length()); ++i) {
         if (line[i] == ' ' || line[i] == '\t') {
             valueEnd = i;
             break;
@@ -666,7 +667,7 @@ uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopC
         }
 
         // Odczyt linii z pliku
-        String line = file.readStringUntil('\n');
+        String line { file.readStringUntil('\n') };
         lineNumber++;
 
         #ifdef DEBUG_CNC_TASK
