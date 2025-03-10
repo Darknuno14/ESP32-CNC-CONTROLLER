@@ -991,7 +991,7 @@ bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepper
     return true;
 }
 
-void updateOutputs(MachineState& state) {
+void updateOutputs(const MachineState& state) {
     digitalWrite(CONFIG::WIRE_RELAY_PIN, state.hotWireOn ? HIGH : LOW);
     digitalWrite(CONFIG::FAN_RELAY_PIN, state.fanOn ? HIGH : LOW);
 }

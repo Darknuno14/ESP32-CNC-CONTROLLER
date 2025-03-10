@@ -360,7 +360,7 @@ void WebServerManager::setupJogRoutes() {
                 }
 
                 // Sprawdź, czy wymagane parametry istnieją
-                if (!doc.containsKey("x") || !doc.containsKey("y") || !doc.containsKey("speed")) {
+                if (!doc["x"].is<float>() || !doc["y"].is<float>() || !doc["speed"].is<float>()) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing parameters\"}");
                     return;
                 }
@@ -411,7 +411,7 @@ void WebServerManager::setupJogRoutes() {
                 }
 
                 // Sprawdź, czy parametr state istnieje
-                if (!doc.containsKey("state")) {
+                if (!doc["state"].is<bool>()) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing state parameter\"}");
                     return;
                 }
@@ -461,7 +461,7 @@ void WebServerManager::setupJogRoutes() {
                 }
 
                 // Sprawdź, czy parametr state istnieje
-                if (!doc.containsKey("state")) {
+                if (!doc["state"].is<bool>()) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing state parameter\"}");
                     return;
                 }
