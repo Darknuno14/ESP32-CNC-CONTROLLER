@@ -134,6 +134,8 @@ void WebServerManager::setupRoutes() {
         request->send(LittleFS, "/config.html", "text/html");
         });
 
+
+
     setupIndexRoutes();
     setupConfigRoutes();
     setupJogRoutes();
@@ -161,6 +163,17 @@ void WebServerManager::setupIndexRoutes() {
         request->send(200, "application/json", "{\"success\":true}");
         });
 
+    // Przycisk PAUSE
+    server->on("/api/pause", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: Pause button pressed");
+        #endif
+
+        this->sendCommand(CommandType::PAUSE);
+
+        request->send(200, "application/json", "{\"success\":true}");
+        });
+
     // Przycisk STOP
     server->on("/api/stop", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
@@ -172,13 +185,13 @@ void WebServerManager::setupIndexRoutes() {
         request->send(200, "application/json", "{\"success\":true}");
         });
 
-    // Przycisk PAUSE
-    server->on("/api/pause", HTTP_POST, [this](AsyncWebServerRequest* request) {
+    // Przycisk RESET
+    server->on("/api/reset", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Pause button pressed");
+        Serial.println("DEBUG SERVER STATUS: Reset button pressed");
         #endif
 
-        this->sendCommand(CommandType::PAUSE);
+        this->sendCommand(CommandType::RESET);
 
         request->send(200, "application/json", "{\"success\":true}");
         });
@@ -200,7 +213,7 @@ void WebServerManager::setupIndexRoutes() {
         Serial.println("DEBUG SERVER STATUS: Homing requested");
         #endif
 
-        this->sendCommand(CommandType::HOMING);
+        this->sendCommand(CommandType::HOME);
 
         request->send(200, "application/json", "{\"success\":true}");
         });

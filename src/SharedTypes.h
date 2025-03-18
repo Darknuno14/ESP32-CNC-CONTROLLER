@@ -8,9 +8,9 @@ enum class CommandType {
     START,
     STOP,
     PAUSE,
-    JOG,
-    HOMING,
+    HOME,
     RESET,
+    JOG,
     ZERO
 };
 
@@ -24,7 +24,6 @@ struct WebserverCommand {
 enum class CNCState {
     IDLE,           // Bezczynność, oczekiwanie na polecenia
     RUNNING,        // Wykonywanie programu G-code
-    JOG,            // Tryb ręcznego sterowania
     HOMING,         // Wykonywanie sekwencji bazowania
     STOPPED,        // Działanie maszyny zatrzymane
     ERROR           // Błąd maszyny
@@ -45,7 +44,7 @@ struct MachineState {
     bool fanOn { false };      // Stan wentylatora
 
     // Informacje o zadaniu
-    std::string currentProject {};
+    std::string currentProject { "" };  // Nazwa aktualnego projektu
     float jobProgress { 0.0f };  // 0-100%
     int currentLine { 0 };       // Aktualnie przetwarzana linia G-code
 
@@ -56,4 +55,38 @@ struct MachineState {
     // Flagi błędów
     bool hasError { false };
     uint8_t errorCode { 0 };
+};
+
+struct GCodeProcessingState {
+    // Plik i status
+    File currentFile {};
+    bool fileOpen { false };
+    String currentLine { "" };
+
+    // Statystyki 
+    uint32_t lineNumber { 0 };
+    uint32_t totalLines { 0 };
+
+    // Flagi kontrolne
+    volatile bool stopRequested { false };
+    volatile bool pauseRequested { false };
+
+    // Stan przetwarzania
+    enum class ProcessingStage {
+        IDLE,
+        HEATING,
+        MOVING_TO_OFFSET,
+        READING_FILE,
+        PROCESSING_LINE,
+        EXECUTING_MOVEMENT,
+        FINISHED,
+        ERROR
+    };
+
+    ProcessingStage stage { ProcessingStage::IDLE };
+
+    // Dane o ruchu
+    float targetX { 0.0f };
+    float targetY { 0.0f };
+    bool movementInProgress { false };
 };
