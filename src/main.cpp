@@ -76,70 +76,6 @@ bool executeHomingSequence(AccelStepper& stepperX, AccelStepper& stepperY, const
 * ------------------------------------------------------------------------------------------------------------
 */
 
-// Zadanie kontroli i sterowania maszyną - obsługa interfejsu webowego
-void taskControl(void* parameter) {
-    Serial.printf("STATUS: Task1 started on core %d\n", xPortGetCoreID());
-
-    FSManager* fsManager = new FSManager();
-    WiFiManager* wifiManager = new WiFiManager();
-    WebServerManager* webServerManager = new WebServerManager(sdManager, configManager, commandQueue);
-
-    initializeManagers(fsManager, sdManager, wifiManager, webServerManager, configManager);
-    connectToWiFi(wifiManager);
-    startWebServer(webServerManager);
-
-    // Bufor na przychodzący stan maszyny
-    MachineState currentState {};
-
-    // Przechowujemy ostatni stan maszyny
-    MachineState lastState {};
-    memset(&lastState, 0, sizeof(MachineState));
-
-    unsigned long lastWebUpdateTime { 0 };
-    constexpr unsigned long WEB_UPDATE_INTERVAL { 200 }; // ms
-
-    while (true) {
-        // 1. Odbieranie statusu maszyny z kolejki
-        if (xQueueReceive(stateQueue, &currentState, 0) == pdTRUE) {
-            #ifdef DEBUG_CONTROL_TASK
-            Serial.printf("STATUS: Received machine state. Position: X=%.2f, Y=%.2f, State=%d\n",
-                currentState.currentX, currentState.currentY, (int)currentState.state);
-            #endif
-
-            // Zapamiętaj ostatni stan
-            lastState = currentState;
-
-            // Wysyłaj aktualizacje przez EventSource jeśli jest istotna zmiana lub minął interwał
-            if (millis() - lastWebUpdateTime > WEB_UPDATE_INTERVAL ||
-                currentState.state != lastState.state ||
-                fabs(currentState.jobProgress - lastState.jobProgress) > 0.5) {
-
-                // Generuj dane JSON
-                char buffer[256];
-                snprintf(buffer, sizeof(buffer),
-                    "{\"state\":%d,\"currentX\":%.3f,\"currentY\":%.3f,\"spindleOn\":%s,\"fanOn\":%s,"
-                    "\"jobProgress\":%.1f,\"currentLine\":%d,\"currentProject\":\"%s\",\"jobRunTime\":%lu,\"isPaused\":%s}",
-                    (int)currentState.state,
-                    currentState.currentX, currentState.currentY,
-                    currentState.hotWireOn ? "true" : "false",
-                    currentState.fanOn ? "true" : "false",
-                    currentState.jobProgress,
-                    currentState.currentLine,
-                    currentState.currentProject.c_str(),
-                    currentState.jobRunTime,
-                    currentState.isPaused ? "true" : "false");
-
-                // Wyślij zdarzenie do klientów webowych
-                webServerManager->sendEvent("machine-status", buffer);
-
-                lastWebUpdateTime = millis();
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(10)); // delay to prevent watchdog timeouts
-    }
-}
-
 // Zadanie obsługi ruchu CNC - wykonywanie poleceń i kontrola fizycznych wejść/wyjść
 void taskCNC(void* parameter) {
     Serial.printf("STATUS: Task2 started on core %d\n", xPortGetCoreID());
@@ -169,7 +105,8 @@ void taskCNC(void* parameter) {
     bool jogInProgress = false;       // Czy jog jest w trakcie
 
     unsigned long lastStatusUpdateTime { 0 };                 // Ostatnia aktualizacja statusu
-    constexpr unsigned long STATUS_UPDATE_INTERVAL { 500 };   // Interwał aktualizacji statusu (500ms)
+    constexpr unsigned long STATUS_UPDATE_INTERVAL { 10000 };   // Interwał aktualizacji statusu
+    // TODO: zmienić czas z 10s
     unsigned long lastCommandProcessTime = 0;              // Czas ostatniego przetwarzania komendy
     constexpr unsigned long COMMAND_PROCESS_INTERVAL = 10; // Interwał przetwarzania komend (10ms)
 
@@ -227,6 +164,7 @@ void taskCNC(void* parameter) {
     uint8_t processResult { 0 };
 
     while (true) {
+        // 1. Odbieranie komend z kolejki
         if (millis() - lastCommandProcessTime >= COMMAND_PROCESS_INTERVAL) {
             if (xQueueReceive(commandQueue, &cmd, 0) == pdTRUE) {
                 #ifdef DEBUG_CNC_TASK
@@ -563,21 +501,40 @@ void taskCNC(void* parameter) {
 
         // 5. Wysyłanie stanu maszyny przez kolejkę
         if (millis() - lastStatusUpdateTime >= STATUS_UPDATE_INTERVAL) {
-            if (xQueueSend(stateQueue, &state, 0) == pdTRUE) {
-                #ifdef DEBUG_CNC_TASK
-                Serial.printf("DEBUG CNC: Stan wysłany. X=%.2f, Y=%.2f, Stan=%d\n",
-                    state.currentX, state.currentY, static_cast<int>(state.state));
-                #endif
-            }
+
+            // TODO: ZAIMPLEMENTOWAĆ, BO POPTRZEDNIA WERSJA WYSYŁANIA KOLEJKI RESTARTUJE ESP - BYĆ MOŻE PROBLEMEM JEST STRING W NAZWIE PROJEKTU
+
+            #ifdef DEBUG_CNC_TASK
+            Serial.printf("DEBUG CNC: Stan wysłany. X=%.2f, Y=%.2f, Stan=%d\n",
+                state.currentX, state.currentY, static_cast<int>(state.state));
+            #endif
 
             lastStatusUpdateTime = millis();
         }
-
         // Krótka przerwa, aby zapobiec przekroczeniu czasu watchdoga
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
+// Zadanie kontroli i sterowania maszyną - obsługa interfejsu webowego
+void taskControl(void* parameter) {
+    Serial.printf("STATUS: Task1 started on core %d\n", xPortGetCoreID());
+
+    FSManager* fsManager = new FSManager();
+    WiFiManager* wifiManager = new WiFiManager();
+    WebServerManager* webServerManager = new WebServerManager(sdManager, configManager, commandQueue);
+
+    initializeManagers(fsManager, sdManager, wifiManager, webServerManager, configManager);
+    connectToWiFi(wifiManager);
+    startWebServer(webServerManager);
+
+     while (true) {
+        // TODO: Zaimpelementować odbieranie statusu maszyny z kolejki
+
+        // Krótkie opóźnienie dla oszczędzania energii i zapobiegania watchdog timeouts
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
 /*
 * ------------------------------------------------------------------------------------------------------------
 * --- Main Controller Program ---

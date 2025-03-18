@@ -79,18 +79,21 @@ WebServerStatus WebServerManager::begin() {
     // Serve CSS files (z większym bezpieczeństwem)
     if (LittleFS.exists("/css/styles.css")) {
         server->serveStatic("/css/", LittleFS, "/css/")
-            .setCacheControl("max-age=86400"); // Cache for 24 hours
+            .setCacheControl("max-age=86400")
+            .setTryGzipFirst(false);
     }
 
     // Serve JavaScript files (z większym bezpieczeństwem)
     if (LittleFS.exists("/js/")) {
         server->serveStatic("/js/", LittleFS, "/js/")
-            .setCacheControl("max-age=86400"); // Cache for 24 hours
+            .setCacheControl("max-age=86400")
+            .setTryGzipFirst(false);
     }
 
     // Serve HTML and other files from root
     server->serveStatic("/", LittleFS, "/")
-        .setDefaultFile("index.html");
+        .setDefaultFile("index.html")
+        .setTryGzipFirst(false);
 
 
     // Start the web server
@@ -808,7 +811,7 @@ void WebServerManager::sendCommand(CommandType type, float param1, float param2,
 }
 
 void WebServerManager::sendEvent(const char* event, const char* data) {
-    if (events && eventsInitialized) {
+    if (events && eventsInitialized && event && data) {
         events->send(data, event, millis());
     }
 }
