@@ -72,10 +72,17 @@ bool updateMotorSpeed(const int axis, const bool useRapid, AccelStepper& stepper
  */
 bool updateMotorSpeed(const int axis, const float feedRate, const float accelMultiplier, AccelStepper& stepper, const MachineConfig& config);
 
-
-
-void handleCNCStateMachine(MachineState& cncState, bool commandPending, WebserverCommand& cmd,
+void processCNCStateMachine(MachineState& cncState, bool commandPending, WebserverCommand& cmd,
     AccelStepper& stepperX, AccelStepper& stepperY, MachineConfig& config);
+
+    bool initializeGCodeProcessing(const std::string& filename, MachineState& state,
+        GCodeProcessingState& gCodeState, MachineConfig& config);
+
+    void processGCodeStateMachine(MachineState& cncState, GCodeProcessingState& gCodeState,
+        AccelStepper& stepperX, AccelStepper& stepperY, MachineConfig& config);
+
+    bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepperY,
+        MachineState& cncState, GCodeProcessingState& gCodeState, MachineConfig& config);
 /*
 * ------------------------------------------------------------------------------------------------------------
 * --- Tasks ---
@@ -142,7 +149,7 @@ void taskCNC(void* parameter) {
             lastStatusUpdateTime = currentTime;
         }
 
-        handleCNCStateMachine(cncState, commandPending, cmd, stepperX, stepperY, config);
+        processCNCStateMachine(cncState, commandPending, cmd, stepperX, stepperY, config);
 
         updateOutputs(cncState);
 
@@ -432,7 +439,7 @@ bool updateMotorSpeed(const int axis, const float feedRate, const float accelMul
 }
 
 // CNC
-void handleCNCStateMachine(MachineState& cncState, bool commandPending, WebserverCommand& cmd,
+void processCNCStateMachine(MachineState& cncState, bool commandPending, WebserverCommand& cmd,
     AccelStepper& stepperX, AccelStepper& stepperY, MachineConfig& config) {
     GCodeProcessingState gCodeState {};
 
