@@ -24,6 +24,7 @@ struct WebserverCommand {
 enum class CNCState {
     IDLE,           // Bezczynność, oczekiwanie na polecenia
     RUNNING,        // Wykonywanie programu G-code
+    JOG,            // Ruch ręczny
     HOMING,         // Wykonywanie sekwencji bazowania
     STOPPED,        // Działanie maszyny zatrzymane
     ERROR           // Błąd maszyny
@@ -51,10 +52,6 @@ struct MachineState {
     // Statystyki
     unsigned long jobStartTime { 0 };  // Czas rozpoczęcia zadania (millis)
     unsigned long jobRunTime { 0 };    // Czas pracy (ms)
-
-    // Flagi błędów
-    bool hasError { false };
-    uint8_t errorCode { 0 };
 };
 
 struct GCodeProcessingState {
@@ -74,6 +71,7 @@ struct GCodeProcessingState {
     // Stan przetwarzania
     enum class ProcessingStage {
         IDLE,
+        INITIALIZING,
         HEATING,
         MOVING_TO_OFFSET,
         READING_FILE,
@@ -89,4 +87,11 @@ struct GCodeProcessingState {
     float targetX { 0.0f };
     float targetY { 0.0f };
     bool movementInProgress { false };
+    
+    // Dane o podgrzewaniu
+    unsigned long heatingStartTime { 0 };
+    unsigned long heatingDuration { 0 };  // Czas nagrzewania w ms
+    
+    // Dane o błędzie
+    String errorMessage { "" };
 };

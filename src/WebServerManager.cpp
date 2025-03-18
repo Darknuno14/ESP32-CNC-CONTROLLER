@@ -233,8 +233,6 @@ void WebServerManager::setupIndexRoutes() {
         // Stan maszyny
         doc["state"] = static_cast<int>(lastKnownState.state);
         doc["isPaused"] = lastKnownState.isPaused;
-        doc["hasError"] = lastKnownState.hasError;
-        doc["errorCode"] = lastKnownState.errorCode;
 
         // Pozycja
         doc["currentX"] = lastKnownState.currentX;
