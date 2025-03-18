@@ -148,6 +148,9 @@ String ConfigManager::configToJson() {
         yAxis["rapidFeedRate"] = config.yAxis.rapidFeedRate;
         yAxis["rapidAcceleration"] = config.yAxis.rapidAcceleration;
 
+        doc["offsetX"] = config.offsetX;
+        doc["offsetY"] = config.offsetY;
+
         // Pozostałe parametry
         doc["useGCodeFeedRate"] = config.useGCodeFeedRate;
         doc["delayAfterStartup"] = config.delayAfterStartup;
@@ -197,6 +200,10 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
             if (yAxis["rapidAcceleration"].is<float>()) config.yAxis.rapidAcceleration = yAxis["rapidAcceleration"].as<float>();
         }
 
+        // Parametry offsetu
+        if (doc["offsetX"].is<float>()) config.offsetX = doc["offsetX"].as<float>();
+        if (doc["offsetY"].is<float>()) config.offsetY = doc["offsetY"].as<float>();
+
         // Pozostałe parametry
         if (doc["useGCodeFeedRate"].is<bool>()) config.useGCodeFeedRate = doc["useGCodeFeedRate"].as<bool>();
         if (doc["delayAfterStartup"].is<int>()) config.delayAfterStartup = doc["delayAfterStartup"].as<int>();
@@ -233,6 +240,10 @@ ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName,
         else if (paramName == "yAxis.workAcceleration") config.yAxis.workAcceleration = static_cast<float>(value);
         else if (paramName == "yAxis.rapidFeedRate") config.yAxis.rapidFeedRate = static_cast<float>(value);
         else if (paramName == "yAxis.rapidAcceleration") config.yAxis.rapidAcceleration = static_cast<float>(value);
+
+        // Parametry offsetu
+        else if (paramName == "offsetX") config.offsetX = static_cast<float>(value);
+        else if (paramName == "offsetY") config.offsetY = static_cast<float>(value);
 
         // Pozostałe parametry
         else if (paramName == "useGCodeFeedRate") config.useGCodeFeedRate = static_cast<bool>(value);

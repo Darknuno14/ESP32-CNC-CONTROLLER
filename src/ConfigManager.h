@@ -21,6 +21,9 @@ struct MachineConfig {
     MotorConfig xAxis {};
     MotorConfig yAxis {};
 
+    float offsetX {};            // Przesunięcie punktu rozpoczęcia wykonywania G-code
+    float offsetY {};            // [mm]
+
     // Pozostałe parametry
     bool useGCodeFeedRate {};      // Czy używać prędkości podanej w G-code
     int delayAfterStartup {};      // Opóźnienie po uruchomieniu (ms)

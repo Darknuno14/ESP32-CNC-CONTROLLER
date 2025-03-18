@@ -261,6 +261,49 @@
             </div>
           </div>
         </div>
+        <!--OFFSET-->
+        <div class="card mb-4">
+          <div
+            class="card-header d-flex justify-content-between align-items-center"
+          >
+            <h5 class="mb-0">Konfiguracja pozycji początkowej</h5>
+            <div class="form-text text-muted">
+              Te ustawienia określają pozycję początkową przed wykonaniem G-code
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label for="offsetX" class="form-label"
+                  >Offset osi X (mm)</label
+                >
+                <input
+                  type="number"
+                  class="form-control"
+                  id="offsetX"
+                  name="offsetX"
+                  step="0.1"
+                  required
+                />
+                <div class="form-text">Przesunięcie początkowe w osi X</div>
+              </div>
+              <div class="col-md-6">
+                <label for="offsetY" class="form-label"
+                  >Offset osi Y (mm)</label
+                >
+                <input
+                  type="number"
+                  class="form-control"
+                  id="offsetY"
+                  name="offsetY"
+                  step="0.1"
+                  required
+                />
+                <div class="form-text">Przesunięcie początkowe w osi Y</div>
+              </div>
+            </div>
+          </div>
+        </div>
         <!--POZOSTALE-->
         <div class="card mb-4">
           <div class="card-header">

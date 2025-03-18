@@ -57,6 +57,8 @@ constexpr int DELAY_AFTER_STARTUP {1000};
 constexpr bool DEACTIVATE_ESTOP {false};
 constexpr bool DEACTIVATE_LIMIT_SWITCHES {false};
 constexpr uint8_t LIMIT_SWITCH_TYPE {0};
+constexpr float X_OFFSET {0.0f};
+constexpr float Y_OFFSET {0.0f};
 // ============================================================================
 constexpr int JSON_DOC_SIZE {1024};
 constexpr long MAX_CONNECTION_TIME {10000}; // 10 seconds 

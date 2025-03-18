@@ -39,6 +39,8 @@ function loadConfiguration() {
         document.getElementById("yRapidAcceleration").value =
           config.yAxis.rapidAcceleration;
       }
+      document.getElementById("offsetX").value = config.offsetX;
+      document.getElementById("offsetY").value = config.offsetY;
       document.getElementById("useGCodeFeedRate").checked =
         config.useGCodeFeedRate;
       document.getElementById("delayAfterStartup").value =
@@ -91,6 +93,8 @@ function saveConfiguration(event) {
       rapidFeedRate: parseFloat(formData.get("yAxis.rapidFeedRate")),
       rapidAcceleration: parseFloat(formData.get("yAxis.rapidAcceleration")),
     },
+    offsetX: parseFloat(formData.get("offsetX")),
+    offsetY: parseFloat(formData.get("offsetY")),
     useGCodeFeedRate: formData.get("useGCodeFeedRate") === "on",
     delayAfterStartup: parseInt(formData.get("delayAfterStartup")),
     deactivateESTOP: formData.get("deactivateESTOP") === "on",

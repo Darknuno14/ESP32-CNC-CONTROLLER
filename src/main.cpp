@@ -199,6 +199,9 @@ void taskCNC(void* parameter) {
         config.yAxis.rapidFeedRate = CONFIG::Y_RAPID_FEEDRATE;
         config.yAxis.rapidAcceleration = CONFIG::Y_RAPID_ACCELERATION;
 
+        config.offsetX = CONFIG::X_OFFSET;
+        config.offsetY = CONFIG::Y_OFFSET;
+
         config.useGCodeFeedRate = CONFIG::USE_GCODE_FEEDRATE;
         config.delayAfterStartup = CONFIG::DELAY_AFTER_STARTUP;
 
@@ -1027,6 +1030,8 @@ uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopC
         config.xAxis.workAcceleration = CONFIG::X_WORK_ACCELERATION;
         config.yAxis.workFeedRate = CONFIG::Y_WORK_FEEDRATE;
         config.yAxis.workAcceleration = CONFIG::Y_WORK_ACCELERATION;
+        config.offsetX = CONFIG::X_OFFSET;
+        config.offsetY = CONFIG::Y_OFFSET;
         config.useGCodeFeedRate = CONFIG::USE_GCODE_FEEDRATE;
         config.deactivateESTOP = CONFIG::DEACTIVATE_ESTOP;
         config.deactivateLimitSwitches = CONFIG::DEACTIVATE_LIMIT_SWITCHES;
@@ -1052,6 +1057,61 @@ uint8_t processGCodeFile(const std::string& filename, volatile const bool& stopC
     // Przetwarzanie pliku linia po linii
     uint32_t lineNumber { 0 };
     bool processingError { false };
+
+    if (config.offsetX != 0.0f || config.offsetY != 0.0f) {
+        #ifdef DEBUG_CNC_TASK
+        Serial.printf("DEBUG CNC: Przesunięcie do pozycji początkowej (offset): X=%.2f, Y=%.2f\n",
+            config.offsetX, config.offsetY);
+        #endif
+
+        // Oblicz przesunięcie w krokach silnika
+        long targetStepsX { static_cast<long>(config.offsetX * config.xAxis.stepsPerMM) };
+        long targetStepsY { static_cast<long>(config.offsetY * config.yAxis.stepsPerMM) };
+
+        // Ustaw parametry ruchu
+        stepperX.setMaxSpeed(config.xAxis.rapidFeedRate / 60.0f * config.xAxis.stepsPerMM);
+        stepperY.setMaxSpeed(config.yAxis.rapidFeedRate / 60.0f * config.yAxis.stepsPerMM);
+        stepperX.setAcceleration(config.xAxis.rapidAcceleration * config.xAxis.stepsPerMM);
+        stepperY.setAcceleration(config.yAxis.rapidAcceleration * config.yAxis.stepsPerMM);
+
+        // Ustaw pozycje docelowe (ruch absolutny)
+        stepperX.moveTo(targetStepsX);
+        stepperY.moveTo(targetStepsY);
+
+        // Wykonaj ruch do pozycji offsetu
+        bool moving { true };
+        while (moving && !stopCondition) {
+            stepperX.run();
+            stepperY.run();
+
+            // Aktualizuj stan pozycji
+            state.currentX = stepperX.currentPosition() / config.xAxis.stepsPerMM;
+            state.currentY = stepperY.currentPosition() / config.yAxis.stepsPerMM;
+
+            // Sprawdź, czy ruch został zakończony
+            if (stepperX.distanceToGo() == 0 && stepperY.distanceToGo() == 0) {
+                moving = false;
+            }
+
+            // Wysyłanie aktualizacji statusu co pewien czas
+            if (millis() % 100 == 0) {
+                xQueueSend(stateQueue, &state, 0);
+            }
+
+            vTaskDelay(10); // Zapobieganie watchdog reset
+        }
+
+        // Jeśli zatrzymano podczas ruchu do pozycji startowej, przerwij
+        if (stopCondition) {
+            file.close();
+            sdManager->giveSD();
+            return 1; // Zatrzymano przez użytkownika
+        }
+
+        #ifdef DEBUG_CNC_TASK
+        Serial.println("DEBUG CNC: Osiągnięto pozycję początkową");
+        #endif
+    }
 
     while (file.available() && !stopCondition) {
         if (pauseCondition) {
