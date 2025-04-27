@@ -28,6 +28,7 @@ class WebServerManager {
     ConfigManager* configManager { nullptr };
 
     QueueHandle_t commandQueue; // Zasada Inversion of Control
+    QueueHandle_t stateQueue;
 
     // Track initialization status
     bool serverInitialized { false };
@@ -48,7 +49,7 @@ class WebServerManager {
     public:
 
     // Construct a new Web Server Manager Pointer to initialized SD card manager
-    WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue);
+    WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue, QueueHandle_t extStateQueue);
 
     // Destroy and clean up allocated resources of the Web Server Manager
     ~WebServerManager();

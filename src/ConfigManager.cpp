@@ -134,23 +134,22 @@ String ConfigManager::configToJson() {
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
         // Parametry osi X
         JsonObject xAxis = doc["xAxis"].to<JsonObject>();
-        xAxis["stepsPerMM"] = config.xAxis.stepsPerMM;
-        xAxis["workFeedRate"] = config.xAxis.workFeedRate;
-        xAxis["workAcceleration"] = config.xAxis.workAcceleration;
-        xAxis["rapidFeedRate"] = config.xAxis.rapidFeedRate;
-        xAxis["rapidAcceleration"] = config.xAxis.rapidAcceleration;
+        xAxis["stepsPerMM"] = config.X.stepsPerMM;
+        xAxis["workFeedRate"] = config.X.workFeedRate;
+        xAxis["workAcceleration"] = config.X.workAcceleration;
+        xAxis["rapidFeedRate"] = config.X.rapidFeedRate;
+        xAxis["rapidAcceleration"] = config.X.rapidAcceleration;
+        xAxis["offset"] = config.X.offset;
 
         // Parametry osi Y
         JsonObject yAxis = doc["yAxis"].to<JsonObject>();
-        yAxis["stepsPerMM"] = config.yAxis.stepsPerMM;
-        yAxis["workFeedRate"] = config.yAxis.workFeedRate;
-        yAxis["workAcceleration"] = config.yAxis.workAcceleration;
-        yAxis["rapidFeedRate"] = config.yAxis.rapidFeedRate;
-        yAxis["rapidAcceleration"] = config.yAxis.rapidAcceleration;
-
-        doc["offsetX"] = config.offsetX;
-        doc["offsetY"] = config.offsetY;
-
+        yAxis["stepsPerMM"] = config.Y.stepsPerMM;
+        yAxis["workFeedRate"] = config.Y.workFeedRate;
+        yAxis["workAcceleration"] = config.Y.workAcceleration;
+        yAxis["rapidFeedRate"] = config.Y.rapidFeedRate;
+        yAxis["rapidAcceleration"] = config.Y.rapidAcceleration;
+        yAxis["offset"] = config.Y.offset;
+        
         // Pozostałe parametry
         doc["useGCodeFeedRate"] = config.useGCodeFeedRate;
         doc["delayAfterStartup"] = config.delayAfterStartup;
@@ -183,26 +182,24 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
         // Parametry dla osi X
         if (doc["xAxis"].is<JsonObject>()) {
             JsonObject xAxis = doc["xAxis"];
-            if (xAxis["stepsPerMM"].is<float>()) config.xAxis.stepsPerMM = xAxis["stepsPerMM"].as<float>();
-            if (xAxis["workFeedRate"].is<float>()) config.xAxis.workFeedRate = xAxis["workFeedRate"].as<float>();
-            if (xAxis["workAcceleration"].is<float>()) config.xAxis.workAcceleration = xAxis["workAcceleration"].as<float>();
-            if (xAxis["rapidFeedRate"].is<float>()) config.xAxis.rapidFeedRate = xAxis["rapidFeedRate"].as<float>();
-            if (xAxis["rapidAcceleration"].is<float>()) config.xAxis.rapidAcceleration = xAxis["rapidAcceleration"].as<float>();
+            if (xAxis["stepsPerMM"].is<float>()) config.X.stepsPerMM = xAxis["stepsPerMM"].as<float>();
+            if (xAxis["workFeedRate"].is<float>()) config.X.workFeedRate = xAxis["workFeedRate"].as<float>();
+            if (xAxis["workAcceleration"].is<float>()) config.X.workAcceleration = xAxis["workAcceleration"].as<float>();
+            if (xAxis["rapidFeedRate"].is<float>()) config.X.rapidFeedRate = xAxis["rapidFeedRate"].as<float>();
+            if (xAxis["rapidAcceleration"].is<float>()) config.X.rapidAcceleration = xAxis["rapidAcceleration"].as<float>();
+            if (doc["offset"].is<float>()) config.X.offset = doc["offset"].as<float>();
         }
 
         // Parametry dla osi Y
         if (doc["yAxis"].is<JsonObject>()) {
             JsonObject yAxis = doc["yAxis"];
-            if (yAxis["stepsPerMM"].is<float>()) config.yAxis.stepsPerMM = yAxis["stepsPerMM"].as<float>();
-            if (yAxis["workFeedRate"].is<float>()) config.yAxis.workFeedRate = yAxis["workFeedRate"].as<float>();
-            if (yAxis["workAcceleration"].is<float>()) config.yAxis.workAcceleration = yAxis["workAcceleration"].as<float>();
-            if (yAxis["rapidFeedRate"].is<float>()) config.yAxis.rapidFeedRate = yAxis["rapidFeedRate"].as<float>();
-            if (yAxis["rapidAcceleration"].is<float>()) config.yAxis.rapidAcceleration = yAxis["rapidAcceleration"].as<float>();
+            if (yAxis["stepsPerMM"].is<float>()) config.Y.stepsPerMM = yAxis["stepsPerMM"].as<float>();
+            if (yAxis["workFeedRate"].is<float>()) config.Y.workFeedRate = yAxis["workFeedRate"].as<float>();
+            if (yAxis["workAcceleration"].is<float>()) config.Y.workAcceleration = yAxis["workAcceleration"].as<float>();
+            if (yAxis["rapidFeedRate"].is<float>()) config.Y.rapidFeedRate = yAxis["rapidFeedRate"].as<float>();
+            if (yAxis["rapidAcceleration"].is<float>()) config.Y.rapidAcceleration = yAxis["rapidAcceleration"].as<float>();
+            if (doc["offset"].is<float>()) config.Y.offset = doc["offset"].as<float>();
         }
-
-        // Parametry offsetu
-        if (doc["offsetX"].is<float>()) config.offsetX = doc["offsetX"].as<float>();
-        if (doc["offsetY"].is<float>()) config.offsetY = doc["offsetY"].as<float>();
 
         // Pozostałe parametry
         if (doc["useGCodeFeedRate"].is<bool>()) config.useGCodeFeedRate = doc["useGCodeFeedRate"].as<bool>();
@@ -228,22 +225,21 @@ ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName,
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
         // Aktualizacja wybranego parametru
         // Parametry osi X
-        if (paramName == "xAxis.stepsPerMM") config.xAxis.stepsPerMM = static_cast<float>(value);
-        else if (paramName == "xAxis.workFeedRate") config.xAxis.workFeedRate = static_cast<float>(value);
-        else if (paramName == "xAxis.workAcceleration") config.xAxis.workAcceleration = static_cast<float>(value);
-        else if (paramName == "xAxis.rapidFeedRate") config.xAxis.rapidFeedRate = static_cast<float>(value);
-        else if (paramName == "xAxis.rapidAcceleration") config.xAxis.rapidAcceleration = static_cast<float>(value);
+        if (paramName == "xAxis.stepsPerMM") config.X.stepsPerMM = static_cast<float>(value);
+        else if (paramName == "xAxis.workFeedRate") config.X.workFeedRate = static_cast<float>(value);
+        else if (paramName == "xAxis.workAcceleration") config.X.workAcceleration = static_cast<float>(value);
+        else if (paramName == "xAxis.rapidFeedRate") config.X.rapidFeedRate = static_cast<float>(value);
+        else if (paramName == "xAxis.rapidAcceleration") config.X.rapidAcceleration = static_cast<float>(value);
+        else if (paramName == "xAxis.offset") config.X.offset = static_cast<float>(value);
 
         // Parametry osi Y
-        else if (paramName == "yAxis.stepsPerMM") config.yAxis.stepsPerMM = static_cast<float>(value);
-        else if (paramName == "yAxis.workFeedRate") config.yAxis.workFeedRate = static_cast<float>(value);
-        else if (paramName == "yAxis.workAcceleration") config.yAxis.workAcceleration = static_cast<float>(value);
-        else if (paramName == "yAxis.rapidFeedRate") config.yAxis.rapidFeedRate = static_cast<float>(value);
-        else if (paramName == "yAxis.rapidAcceleration") config.yAxis.rapidAcceleration = static_cast<float>(value);
+        else if (paramName == "yAxis.stepsPerMM") config.Y.stepsPerMM = static_cast<float>(value);
+        else if (paramName == "yAxis.workFeedRate") config.Y.workFeedRate = static_cast<float>(value);
+        else if (paramName == "yAxis.workAcceleration") config.Y.workAcceleration = static_cast<float>(value);
+        else if (paramName == "yAxis.rapidFeedRate") config.Y.rapidFeedRate = static_cast<float>(value);
+        else if (paramName == "yAxis.rapidAcceleration") config.Y.rapidAcceleration = static_cast<float>(value);
+        else if (paramName == "yAxis.offset") config.Y.offset = static_cast<float>(value);
 
-        // Parametry offsetu
-        else if (paramName == "offsetX") config.offsetX = static_cast<float>(value);
-        else if (paramName == "offsetY") config.offsetY = static_cast<float>(value);
 
         // Pozostałe parametry
         else if (paramName == "useGCodeFeedRate") config.useGCodeFeedRate = static_cast<bool>(value);

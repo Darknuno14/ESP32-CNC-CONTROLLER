@@ -19,6 +19,7 @@ struct WebserverCommand {
     float param1 { 0 };
     float param2 { 0 };
     float param3 { 0 };
+    float param4 { 0 };
 };
 
 enum class CNCState {
@@ -39,19 +40,28 @@ struct MachineState {
     // Stan operacyjny
     CNCState state { CNCState::IDLE };
     bool isPaused { false };
+    uint8_t errorID { false };
 
-    // Stan urządzeń
+    // Stan IO
+    bool estopOn { false };  // Stan awaryjny
+    bool limitXOn { false }; // Stan krańcówki X
+    bool limitYOn { false }; // Stan krańcówki Y
+    
     bool hotWireOn { false };  // Stan drutu
     bool fanOn { false };      // Stan wentylatora
 
+    uint8_t hotWirePower { 0 };  // Moc drutu (0-255)
+    uint8_t fanPower { 0 };      // Moc wentylatora (0-255)
+
     // Informacje o zadaniu
-    std::string currentProject { "" };  // Nazwa aktualnego projektu
-    float jobProgress { 0.0f };  // 0-100%
-    int currentLine { 0 };       // Aktualnie przetwarzana linia G-code
+    char currentProject[20] ;  // Nazwa aktualnego projektu
+    uint32_t currentLine { 0 };       // Aktualnie przetwarzana linia G-code
+    uint32_t totalLines { 0 };        // Łączna liczba linii G-code
+    TickType_t jobStartTime { 0 };  // Czas rozpoczęcia zadania (millis)
 
     // Statystyki
-    unsigned long jobStartTime { 0 };  // Czas rozpoczęcia zadania (millis)
-    unsigned long jobRunTime { 0 };    // Czas pracy (ms)
+    TickType_t jobRunTime { 0 };    // Czas pracy maszyny (millis)
+    float jobProgress { 0.0f }; // Procent ukończenia zadania (0-100%)
 };
 
 struct GCodeProcessingState {

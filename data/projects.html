@@ -94,6 +94,16 @@
           </div>
 
           <div class="table-responsive">
+            <div class="d-flex justify-content-end mb-2">
+              <button
+                id="confirmFileBtn"
+                class="btn btn-success"
+                onclick="confirmSelectedFile()"
+                disabled
+              >
+                <i class="bi bi-check-circle"></i> Zatwierdź wybór
+              </button>
+            </div>
             <table class="table table-hover project-table">
               <thead>
                 <tr>
@@ -144,22 +154,6 @@
               style="width: 100%; height: auto; border: 1px solid #ccc"
             ></canvas>
           </div>
-
-          <div class="d-flex justify-content-center mt-3">
-            <div class="btn-group">
-              <button id="startBtn" type="button" class="btn btn-success">
-                <i class="bi bi-play-fill"></i> START
-              </button>
-              <button id="pauseBtn" type="button" class="btn btn-warning">
-                <i class="bi bi-pause-fill"></i> PAUSE
-              </button>
-              <button id="stopBtn" type="button" class="btn btn-danger">
-                <i class="bi bi-stop-fill"></i> STOP
-              </button>
-              <button id="resetBtn" type="button" class="btn btn-secondary">
-                <i class="bi bi-arrow-counterclockwise"></i> RESET
-              </button>
-            </div>
           </div>
         </div>
       </div>

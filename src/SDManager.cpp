@@ -11,7 +11,7 @@ SDCardManager::~SDCardManager() {
 }
 
 SDManagerStatus SDCardManager::init() {
-    if (!SD.begin(CONFIG::SD_CS_PIN)) {
+    if (!SD.begin(PINCONFIG::SD_CS_PIN)) {
         return SDManagerStatus::INIT_FAILED;
     }
 
@@ -39,9 +39,8 @@ SDManagerStatus SDCardManager::init() {
     #ifdef DEBUG_SD
     if (listStatus != SDManagerStatus::OK) {
         Serial.println("WARNING: Zainicjalizowano SD, ale nie wczytano listy projektow.");
-        #endif
     }
-
+    #endif
 
     return SDManagerStatus::OK;
 }

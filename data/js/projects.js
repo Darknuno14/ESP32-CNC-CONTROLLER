@@ -62,6 +62,10 @@ function updateFileList(files) {
         "selected-file"
       ).textContent = `Selected file: ${file}`;
       localStorage.setItem("selectedFile", file);
+
+      // Włącz przycisk potwierdzenia
+      const confirmBtn = document.getElementById("confirmFileBtn");
+      if (confirmBtn) confirmBtn.disabled = false;
     });
   }
 }
@@ -138,35 +142,22 @@ function refreshFileList() {
     });
 }
 
-// Wybór pliku
-function submitFileSelection() {
+function confirmSelectedFile() {
   if (!selectedFilename) {
     showMessage("Please select a file first.", "warning");
     return;
   }
-
   fetch("/api/select-file?file=" + encodeURIComponent(selectedFilename), {
     method: "POST",
   })
-    .then((response) => response.json())
+    .then((res) => res.json())
     .then((data) => {
-      if (data.success) {
-        document.getElementById(
-          "selected-file"
-        ).textContent = `Selected file: ${selectedFilename}`;
-        showMessage(`File "${selectedFilename}" selected successfully`);
-        localStorage.setItem("selectedFile", selectedFilename);
-      } else {
-        showMessage(
-          `Failed to select file: ${data.message || "Unknown error"}`,
-          "error"
-        );
-      }
+      showMessage(
+        data.success ? "Wybrano projekt!" : "Błąd: " + data.message,
+        data.success ? "success" : "error"
+      );
     })
-    .catch((error) => {
-      console.error("Selection error:", error);
-      showMessage("Error selecting file", "error");
-    });
+    .catch(() => showMessage("Błąd połączenia z serwerem", "error"));
 }
 
 // Podgląd zawartości pliku G-code
@@ -207,9 +198,6 @@ function previewFile(filename) {
 
   // Wyświetl podgląd
   visualizeGCode(filename);
-
-  // Wyślij informację o wyborze do serwera
-  submitFileSelection();
 }
 
 // Wizualizacja pliku G-code
@@ -225,8 +213,6 @@ function visualizeGCode(filename) {
 
   console.log("Visualizing file:", filename);
 
-  // ZMIEŃ TĘ LINIĘ:
-  // Stara wersja: fetch('/api/sd-files/' + encodeURIComponent(filename))
   fetch("/api/sd_content?file=" + encodeURIComponent(filename))
     .then((response) => {
       if (!response.ok) {
@@ -643,145 +629,6 @@ function initEventSource() {
   };
 }
 
-// Aktualizacja stanu kontrolek na podstawie stanu maszyny
-function updateMachineStatus(data) {
-  const startBtn = document.getElementById("startBtn");
-  const pauseBtn = document.getElementById("pauseBtn");
-  const stopBtn = document.getElementById("stopBtn");
-  const resetBtn = document.getElementById("resetBtn");
-
-  // Stan: IDLE
-  if (data.state === 0) {
-    if (startBtn) startBtn.disabled = false;
-    if (pauseBtn) pauseBtn.disabled = true;
-    if (stopBtn) stopBtn.disabled = true;
-    if (resetBtn) resetBtn.disabled = true;
-  }
-  // Stan: RUNNING
-  else if (data.state === 1) {
-    if (startBtn) startBtn.disabled = true;
-    if (pauseBtn) {
-      pauseBtn.disabled = false;
-      pauseBtn.innerHTML = data.isPaused
-        ? '<i class="bi bi-play-fill"></i> RESUME'
-        : '<i class="bi bi-pause-fill"></i> PAUSE';
-    }
-    if (stopBtn) stopBtn.disabled = false;
-    if (resetBtn) resetBtn.disabled = true;
-  }
-  // Stan: JOG, HOMING
-  else if (data.state === 2 || data.state === 3) {
-    if (startBtn) startBtn.disabled = true;
-    if (pauseBtn) pauseBtn.disabled = true;
-    if (stopBtn) stopBtn.disabled = false;
-    if (resetBtn) resetBtn.disabled = true;
-  }
-  // Stan: STOPPED, ERROR
-  else if (data.state === 4 || data.state === 5) {
-    if (startBtn) startBtn.disabled = true;
-    if (pauseBtn) pauseBtn.disabled = true;
-    if (stopBtn) stopBtn.disabled = true;
-    if (resetBtn) resetBtn.disabled = false;
-  }
-}
-
-// Funkcje sterowania maszyną
-function startProcessing() {
-  if (!selectedFilename) {
-    showMessage("Please select a file first.", "warning");
-    return;
-  }
-
-  // Najpierw upewnij się, że plik jest wybrany na serwerze
-  fetch("/api/select-file?file=" + encodeURIComponent(selectedFilename), {
-    method: "POST",
-  })
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error("Failed to select file");
-      }
-
-      // Teraz uruchom przetwarzanie
-      return fetch("/api/start", { method: "POST" });
-    })
-    .then((response) => response.json())
-    .then((data) => {
-      if (data.success) {
-        showMessage("Processing started");
-      } else {
-        showMessage(
-          "Failed to start processing: " + (data.message || "Unknown error"),
-          "error"
-        );
-      }
-    })
-    .catch((error) => {
-      console.error("Start error:", error);
-      showMessage("Error starting processing: " + error.message, "error");
-    });
-}
-
-function pauseProcessing() {
-  fetch("/api/pause", { method: "POST" })
-    .then((response) => response.json())
-    .then((data) => {
-      if (data.success) {
-        const isPaused = document
-          .getElementById("pauseBtn")
-          .textContent.includes("RESUME");
-        showMessage(isPaused ? "Processing resumed" : "Processing paused");
-      } else {
-        showMessage(
-          "Failed to pause/resume processing: " +
-            (data.message || "Unknown error"),
-          "error"
-        );
-      }
-    })
-    .catch((error) => {
-      console.error("Pause error:", error);
-      showMessage("Error pausing processing: " + error.message, "error");
-    });
-}
-
-function stopProcessing() {
-  fetch("/api/stop", { method: "POST" })
-    .then((response) => response.json())
-    .then((data) => {
-      if (data.success) {
-        showMessage("Processing stopped");
-      } else {
-        showMessage(
-          "Failed to stop processing: " + (data.message || "Unknown error"),
-          "error"
-        );
-      }
-    })
-    .catch((error) => {
-      console.error("Stop error:", error);
-      showMessage("Error stopping processing: " + error.message, "error");
-    });
-}
-
-function resetMachine() {
-  fetch("/api/reset", { method: "POST" })
-    .then((response) => response.json())
-    .then((data) => {
-      if (data.success) {
-        showMessage("Machine reset");
-      } else {
-        showMessage(
-          "Failed to reset machine: " + (data.message || "Unknown error"),
-          "error"
-        );
-      }
-    })
-    .catch((error) => {
-      console.error("Reset error:", error);
-      showMessage("Error resetting machine: " + error.message, "error");
-    });
-}
-
 // Inicjalizacja po załadowaniu strony
 document.addEventListener("DOMContentLoaded", () => {
   // Pobierz listę plików
@@ -795,14 +642,4 @@ document.addEventListener("DOMContentLoaded", () => {
     event.preventDefault();
     uploadFile();
   });
-
-  // Dodaj obsługę przycisków sterowania
-  document
-    .getElementById("startBtn")
-    .addEventListener("click", startProcessing);
-  document
-    .getElementById("pauseBtn")
-    .addEventListener("click", pauseProcessing);
-  document.getElementById("stopBtn").addEventListener("click", stopProcessing);
-  document.getElementById("resetBtn").addEventListener("click", resetMachine);
 });

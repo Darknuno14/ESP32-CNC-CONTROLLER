@@ -7,8 +7,8 @@
 #include "WebServerManager.h"
 #include "CONFIGURATION.H"
 
-WebServerManager::WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue)
-    : sdManager(sdManager), configManager(configManager), commandQueue(extCommandQueue) {
+WebServerManager::WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue, QueueHandle_t extStateQueue)
+    : sdManager(sdManager), configManager(configManager), commandQueue(extCommandQueue), stateQueue(extStateQueue) {
 }
 
 WebServerManager::~WebServerManager() {
@@ -154,7 +154,7 @@ void WebServerManager::setupIndexRoutes() {
     // Przycisk START
     server->on("/api/start", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Start button pressed");
+        Serial.println("DEBUG SERVER STATUS: Komenda START");
         #endif
 
         // Zamiast flagi, wysyłamy komendę START przez kolejkę
@@ -166,7 +166,7 @@ void WebServerManager::setupIndexRoutes() {
     // Przycisk PAUSE
     server->on("/api/pause", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Pause button pressed");
+        Serial.println("DEBUG SERVER STATUS: Komenda PAUSE");
         #endif
 
         this->sendCommand(CommandType::PAUSE);
@@ -177,43 +177,10 @@ void WebServerManager::setupIndexRoutes() {
     // Przycisk STOP
     server->on("/api/stop", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Stop button pressed");
+        Serial.println("DEBUG SERVER STATUS: Komenda STOP");
         #endif
 
         this->sendCommand(CommandType::STOP);
-
-        request->send(200, "application/json", "{\"success\":true}");
-        });
-
-    // Przycisk RESET
-    server->on("/api/reset", HTTP_POST, [this](AsyncWebServerRequest* request) {
-        #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Reset button pressed");
-        #endif
-
-        this->sendCommand(CommandType::RESET);
-
-        request->send(200, "application/json", "{\"success\":true}");
-        });
-
-    // Przycisk do ręcznego bazowania pozycji
-    server->on("/api/zero", HTTP_POST, [this](AsyncWebServerRequest* request) {
-        #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Zero position requested");
-        #endif
-
-        this->sendCommand(CommandType::ZERO);
-
-        request->send(200, "application/json", "{\"success\":true}");
-        });
-
-    // Przycisk bazowania
-    server->on("/api/home", HTTP_POST, [this](AsyncWebServerRequest* request) {
-        #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Homing requested");
-        #endif
-
-        this->sendCommand(CommandType::HOME);
 
         request->send(200, "application/json", "{\"success\":true}");
         });
@@ -223,45 +190,54 @@ void WebServerManager::setupIndexRoutes() {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: Machine status requested");
         #endif
-
-        static MachineState lastKnownState {};
-        static unsigned long lastStateUpdate { 0 };
-
-        // Przygotowanie JSON z danymi
+    
+        // Pobierz najnowszy stan z kolejki (jeśli dostępny)
+        MachineState currentState {};
+        if (xQueuePeek(stateQueue, &currentState, 0) != pdTRUE) {
+            // Jeśli nie udało się pobrać, użyj domyślnego/pustego stanu
+            #ifdef DEBUG_SERVER_ROUTES
+            Serial.println("DEBUG SERVER STATUS: Brak nowego statusu w kolejce, zwracam domyślny stan.");
+            #endif
+        }
+    
         JsonDocument doc {};
-
+    
         // Stan maszyny
-        doc["state"] = static_cast<int>(lastKnownState.state);
-        doc["isPaused"] = lastKnownState.isPaused;
-
+        doc["state"] = static_cast<int>(currentState.state);
+        doc["isPaused"] = currentState.isPaused;
+        doc["errorID"] = currentState.errorID;
+    
         // Pozycja
-        doc["currentX"] = lastKnownState.currentX;
-        doc["currentY"] = lastKnownState.currentY;
-        doc["relativeMode"] = lastKnownState.relativeMode;
-
+        doc["currentX"] = currentState.currentX;
+        doc["currentY"] = currentState.currentY;
+        doc["relativeMode"] = currentState.relativeMode;
+    
         // Stan urządzeń
-        doc["hotWireOn"] = lastKnownState.hotWireOn;
-        doc["fanOn"] = lastKnownState.fanOn;
-
+        doc["hotWireOn"] = currentState.hotWireOn;
+        doc["fanOn"] = currentState.fanOn;
+        doc["hotWirePower"] = currentState.hotWirePower;
+        doc["fanPower"] = currentState.fanPower;
+    
         // Informacje o zadaniu
-        if (lastKnownState.currentProject.length() > 0) {
-            doc["currentProject"] = lastKnownState.currentProject;
-        }
-        else {
-            doc["currentProject"] = "";
-        }
-        doc["jobProgress"] = lastKnownState.jobProgress;
-        doc["currentLine"] = lastKnownState.currentLine;
-        doc["jobStartTime"] = lastKnownState.jobStartTime;
-        doc["jobRunTime"] = lastKnownState.jobRunTime;
-
+        doc["currentProject"] = String(currentState.currentProject);
+        doc["jobProgress"] = currentState.jobProgress;
+        doc["currentLine"] = currentState.currentLine;
+        doc["totalLines"] = currentState.totalLines;
+        doc["jobStartTime"] = currentState.jobStartTime;
+        doc["jobRunTime"] = currentState.jobRunTime;
+    
+        // Stan IO
+        doc["estopOn"] = currentState.estopOn;
+        doc["limitXOn"] = currentState.limitXOn;
+        doc["limitYOn"] = currentState.limitYOn;
+    
         // Konwersja JSON na string
         String jsonString;
         serializeJson(doc, jsonString);
-
+    
         // Wysłanie odpowiedzi
         request->send(200, "application/json", jsonString);
-        });
+    });
 }
 
 void WebServerManager::setupConfigRoutes() {
@@ -678,11 +654,14 @@ void WebServerManager::setupProjectsRoutes() {
         request->send(success ? 200 : 400, "application/json", response);
         });
 
+        
+
     // Status karty SD
     server->on("/api/sd-status", HTTP_GET, [this](AsyncWebServerRequest* request) {
         String json = "{\"initialized\":" + String(this->sdManager->isCardInitialized() ? "true" : "false") + "}";
         request->send(200, "application/json", json);
         });
+
 
     // Reinicjalizacja karty SD i ConfigManager
     server->on("/api/reinitialize-sd", HTTP_POST, [this](AsyncWebServerRequest* request) {

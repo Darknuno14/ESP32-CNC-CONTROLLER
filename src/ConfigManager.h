@@ -7,22 +7,20 @@
 #include <freertos/semphr.h>
 #include "SDManager.h"
 
-// Struktura przechowująca wszystkie parametry konfigurowalne
 struct MachineConfig {
     // Parametry silników
     struct MotorConfig {
-        float stepsPerMM {};        // Ilość kroków silnika na milimetr ruchu 
-        float workFeedRate {};       // Maksymalna prędkość ruchu (G1) [mm/min]
-        float workAcceleration {};   // Maksymalne przyspieszenie (G1) [mm/s^2]
-        float rapidFeedRate {};     // Prędkość ruchu szybkiego (G0) [mm/min]
-        float rapidAcceleration {}; // Przyspieszenie ruchu szybkiego (G0)[mm/s^2]
+        float stepsPerMM {};        // Kroki na mm [steps]
+        float rapidFeedRate {};     // G0 Prędkość [steps/s]
+        float rapidAcceleration {}; // G0 Przyspieszenie [steps/s^2]
+        float workFeedRate {};      // G1 Prędkość [steps/s]
+        float workAcceleration {};  // G1 Przyspieszenie [steps/s^2]
+        float offset {};            // Przejazd po nagrzaniu drutu [mm]
     };
 
-    MotorConfig xAxis {};
-    MotorConfig yAxis {};
-
-    float offsetX {};            // Przesunięcie punktu rozpoczęcia wykonywania G-code
-    float offsetY {};            // [mm]
+    // Osie 
+    MotorConfig X {};
+    MotorConfig Y {};
 
     // Pozostałe parametry
     bool useGCodeFeedRate {};      // Czy używać prędkości podanej w G-code
