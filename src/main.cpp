@@ -48,73 +48,12 @@ bool loadConfig(MachineConfig& config);
 float getParameter(const String& line, char param);
 bool updateMotorSpeed(const char axis, const bool useRapid, AccelStepper& stepper, const MachineConfig& config);
 bool updateMotorSpeed(const char axis, const float feedRate, const float accelMultiplier, AccelStepper& stepper, const MachineConfig& config);
-bool initializeGCodeProcessing(const std::string& filename, MachineState& cncState, GCodeProcessingState& gCodeState, MachineConfig& config);
+bool initializeGCodeProcessing(MachineState& cncState, GCodeProcessingState& gCodeState, MachineConfig& config);
 void processGCodeStateMachine(MachineState& cncState, GCodeProcessingState& gCodeState, AccelStepper& stepperX, AccelStepper& stepperY, MachineConfig& config);
 bool processGCodeLine(String line, AccelStepper& stepperX, AccelStepper& stepperY, MachineState& cncState, GCodeProcessingState& gCodeState, MachineConfig& config);
 
 void taskCNC(void* parameter);
 void taskControl(void* parameter);
-
-void simulateSquareMotion(MachineState& state, bool reset = false) {
-    // Parametry kwadratu i kroku
-    constexpr float step = 5.0f;
-    constexpr float maxX = 200.0f;
-    constexpr float maxY = 150.0f;
-    constexpr uint32_t totalLines = 2 * ((uint32_t)(maxX / step) + (uint32_t)(maxY / step));
-
-    // Stan symulacji (statyczne, żeby pamiętały wartości między wywołaniami)
-    static float x = 0, y = 0;
-    static int phase = 0;
-    static uint32_t line = 0;
-    static TickType_t startTime = 0;
-
-    if (reset) {
-        x = 0;
-        y = 0;
-        phase = 0;
-        line = 0;
-        startTime = xTaskGetTickCount();
-    }
-    if (startTime == 0) startTime = xTaskGetTickCount();
-
-    // Ustawienia początkowe
-    state.state = CNCState::RUNNING;
-    strncpy(state.currentProject, "test_square.gcode", sizeof(state.currentProject) - 1);
-    state.totalLines = totalLines;
-    state.jobStartTime = startTime;
-
-    // Symulacja ruchu po kwadracie
-    if (line < totalLines) {
-        switch (phase) {
-            case 0: // Prawo
-                if (x < maxX) x += step;
-                else phase++;
-                break;
-            case 1: // Dół
-                if (y < maxY) y += step;
-                else phase++;
-                break;
-            case 2: // Lewo
-                if (x > 0) x -= step;
-                else phase++;
-                break;
-            case 3: // Góra
-                if (y > 0) y -= step;
-                else phase = 0;
-                break;
-        }
-        state.currentX = x;
-        state.currentY = y;
-        state.currentLine = line + 1;
-        state.jobRunTime = (xTaskGetTickCount() - startTime) * portTICK_PERIOD_MS;
-        state.jobProgress = 100.0f * (float)(line + 1) / (float)totalLines;
-        line++;
-    }
-    else {
-        state.state = CNCState::IDLE;
-        state.jobProgress = 100.0f;
-    }
-}
 
 /*
 * ------------------------------------------------------------------------------------------------------------
@@ -263,14 +202,6 @@ void taskCNC(void* parameter) {
                 Serial.printf("DEBUG CNC: Otrzymano komendę typu %d\n", static_cast<int>(commandData.type));
                 #endif
                 commandPending = true;
-
-                if (commandData.type == CommandType::START) {
-                    simulateSquareMotion(cncState, true); // reset symulacji
-                    cncState.state = CNCState::RUNNING;
-                }
-                else if (commandData.type == CommandType::STOP) {
-                    cncState.state = CNCState::IDLE;
-                }
             }
             lastCommandProcessTime = currentTime;
         }
@@ -290,15 +221,102 @@ void taskCNC(void* parameter) {
 
         switch (cncState.state) {
             case CNCState::IDLE:
-                Serial.println("DEBUG CNC: Maszyna w stanie IDLE.");
-                vTaskDelay(pdMS_TO_TICKS(2000)); // Odczekanie chwili na poprawne uruchomienie zadania  
                 // W stanie IDLE nic nie robimy, czekamy na komendy
+                if(commandPending) {
+                    commandPending = false;
+                    switch (commandData.type) {
+                        case CommandType::START:
+                            // Rozpoczęcie przetwarzania G-code
+                            if (initializeGCodeProcessing(cncState, gCodeState, config)) {
+                                cncState.state = CNCState::RUNNING;
+                            }
+                            break;
+
+                        case CommandType::HOME:
+                            // Rozpoczęcie bazowania
+                            cncState.state = CNCState::HOMING;
+                            break;
+
+                        case CommandType::JOG:
+                            // Rozpoczęcie ruchu ręcznego
+                            cncState.state = CNCState::JOG;
+                            break;
+
+                        default:
+                            break;
+                    }
+                }
                 break;
 
             case CNCState::RUNNING:
-                Serial.println("DEBUG CNC: Wykonywanie programu G-code.");
-                simulateSquareMotion(cncState);
-                // W stanie RUNNING przetwarzamy plik G-code nieblokująco
+                // Przetwarzanie G-code
+                if (commandPending) {
+                    commandPending = false;
+                    switch (commandData.type) {
+                        case CommandType::PAUSE:
+                            gCodeState.pauseRequested = !gCodeState.pauseRequested;
+                            break;
+                        case CommandType::STOP:
+                            gCodeState.stopRequested = true;
+                            break;
+                        default:
+                            break;
+                    }
+                }
+
+                if (gCodeState.stopRequested) {
+                    // Zatrzymaj przetwarzanie G-code
+                    if (gCodeState.fileOpen && gCodeState.currentFile) {
+                        gCodeState.currentFile.close();
+                        gCodeState.fileOpen = false;
+                    }
+                    cncState.state = CNCState::STOPPED;
+                    #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC: Przetwarzanie wstrzymane");
+                    #endif
+                    break;
+                }
+
+                if (gCodeState.pauseRequested) {
+                    cncState.isPaused = true;
+                    #ifdef DEBUG_CNC_TASK
+                    Serial.println("DEBUG CNC: Przetwarzanie wznowione");
+                    #endif
+                    break;
+                } else {
+                    cncState.isPaused = false;
+                }
+            
+                if (!cncState.isPaused) {
+                    processGCodeStateMachine(cncState, gCodeState, stepperX, stepperY, config);
+            
+                    // Aktualizacja postępu
+                    cncState.currentLine = gCodeState.lineNumber;
+                    cncState.jobProgress = gCodeState.totalLines > 0
+                        ? (100.0f * gCodeState.lineNumber / gCodeState.totalLines)
+                        : 0.0f;
+                    cncState.jobRunTime = millis() - cncState.jobStartTime;
+            
+                    // Sprawdź czy zakończono plik
+                    if (gCodeState.stage == GCodeProcessingState::ProcessingStage::FINISHED) {
+                        if (gCodeState.fileOpen && gCodeState.currentFile) {
+                            gCodeState.currentFile.close();
+                            gCodeState.fileOpen = false;
+                        }
+                        cncState.state = CNCState::IDLE;
+                        #ifdef DEBUG_CNC_TASK
+                        Serial.println("DEBUG CNC: Przetwarzanie pliku zakończone");
+                        #endif
+                    }
+                    // Obsługa błędu
+                    if (gCodeState.stage == GCodeProcessingState::ProcessingStage::ERROR) {
+                        cncState.state = CNCState::ERROR;
+                        #ifdef DEBUG_CNC_TASK
+                        Serial.printf("CNC ERROR: %s\n", gCodeState.errorMessage.c_str());
+                        #endif
+                    }
+                }
+
                 break;
 
             case CNCState::JOG:
@@ -662,5 +680,76 @@ bool updateMotorSpeed(const char axis, const float feedRate, const float accelMu
     return true;
 }
 
+bool initializeGCodeProcessing(MachineState& cncState, GCodeProcessingState& gCodeState, MachineConfig& config) {
+    // Pobierz nazwę wybranego projektu z SDManagera
+    std::string filename {};
+    sdManager->getSelectedProject(filename);
+
+    if (filename.empty()) {
+        #ifdef DEBUG_CNC_TASK
+        Serial.println("DEBUG CNC ERROR: Brak wybranego pliku projektu.");
+        #endif
+        return false;
+    }
+
+    // Zamknij poprzedni plik, jeśli był otwarty
+    if (gCodeState.fileOpen && gCodeState.currentFile) {
+        gCodeState.currentFile.close();
+        gCodeState.fileOpen = false;
+    }
+
+    // Resetuj flagi i stan przetwarzania
+    gCodeState.lineNumber = 0;
+    gCodeState.stopRequested = false;
+    gCodeState.pauseRequested = false;
+    gCodeState.stage = GCodeProcessingState::ProcessingStage::INITIALIZING;
+    gCodeState.movementInProgress = false;
+    gCodeState.errorMessage = "";
+    gCodeState.currentLine = "";
+    gCodeState.heatingStartTime = 0;
+    gCodeState.heatingDuration = config.delayAfterStartup;
+
+    // Inicjalizacja pliku
+    if (!sdManager->takeSD()) {
+        #ifdef DEBUG_CNC_TASK
+        Serial.println("DEBUG CNC ERROR: Nie udało się zablokować karty SD");
+        #endif
+        return false;
+    }
+
+    std::string filePath = CONFIG::PROJECTS_DIR + filename;
+    gCodeState.currentFile = SD.open(filePath.c_str());
+    if (!gCodeState.currentFile) {
+        #ifdef DEBUG_CNC_TASK
+        Serial.printf("DEBUG CNC ERROR: Nie udało się otworzyć pliku %s\n", filePath.c_str());
+        #endif
+        sdManager->giveSD();
+        return false;
+    }
+
+    // Oszaconowano 24 bajtów na linię
+    // plik 139 648 bajtów ma 5727 linii -> 139648 / 5727 = 24.4
+    // plik 289 824 bajtów ma 11854 linii -> 289824 / 11854 = 24.4
+    // Uproszczono ze względu na niepotrzebne komplikowanie obliczeń
+    gCodeState.totalLines = gCodeState.currentFile.size() / 24;
+
+    #ifdef DEBUG_CNC_TASK
+    Serial.printf("DEBUG CNC: Otwarto plik %s, liczba linii: %d\n",
+        filePath.c_str(), gCodeState.totalLines);
+    #endif
+
+    gCodeState.fileOpen = true;
+    sdManager->giveSD();
+
+    // Inicjalizacja stanu maszyny
+    strncpy(cncState.currentProject, filename.c_str(), sizeof(cncState.currentProject) - 1);
+    cncState.currentProject[sizeof(cncState.currentProject) - 1] = '\0';
+    cncState.jobStartTime = millis();
+    cncState.jobProgress = 0.0f;
+    cncState.currentLine = 0;
+    cncState.totalLines = gCodeState.totalLines;
+
+    return true;
+}
 
 
