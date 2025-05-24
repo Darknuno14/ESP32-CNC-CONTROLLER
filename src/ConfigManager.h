@@ -7,6 +7,9 @@
 #include <freertos/semphr.h>
 #include "SDManager.h"
 
+
+#include "CONFIGURATION.h"
+
 struct MachineConfig {
     // Parametry silników
     struct MotorConfig {
@@ -37,6 +40,7 @@ enum class ConfigManagerStatus {
     JSON_PARSE_ERROR,
     JSON_SERIALIZE_ERROR,
     SD_ACCESS_ERROR,
+    MANAGER_NOT_INITIALIZED,
     UNKNOWN_ERROR
 };
 
@@ -50,8 +54,8 @@ class ConfigManager {
     // Mutex do synchronizacji dostępu do konfiguracji
     SemaphoreHandle_t configMutex {};
 
-    // Flaga wskazująca, czy konfiguracja została załadowana
-    bool configLoaded { false };
+    // Flaga wskazująca, czy konfiguracja została załadowana z pliku
+    bool configInitialized { false };
 
     public:
     // Konstruktor
@@ -64,16 +68,19 @@ class ConfigManager {
     ConfigManagerStatus init();
 
     // Pobranie bieżącej konfiguracji
-    MachineConfig getConfig();
+    ConfigManagerStatus getConfig(MachineConfig& targetConfig);
 
     // Wczytanie konfiguracji z pliku
-    ConfigManagerStatus loadConfig();
+    ConfigManagerStatus readConfigFromSD();
 
     // Zapisanie konfiguracji do pliku
-    ConfigManagerStatus saveConfig();
+    ConfigManagerStatus writeConfigToSD();
+
+    // Wczytanie domyślnej konfiguracji zawartej w pliku CONFIGURATION.h
+    ConfigManagerStatus loadDefaultConfig();
 
     // Ustawienie całej konfiguracji
-    ConfigManagerStatus setConfig(const MachineConfig& newConfig);
+    ConfigManagerStatus updateConfig(const MachineConfig& newConfig);
 
     // Aktualizacja pojedynczego parametru
     template<typename T>
@@ -84,7 +91,4 @@ class ConfigManager {
 
     // Deserializacja konfiguracji z JSON
     ConfigManagerStatus configFromJson(const String& jsonString);
-
-    // Sprawdzenie, czy konfiguracja została załadowana
-    bool isConfigLoaded();
 };

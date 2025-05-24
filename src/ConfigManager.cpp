@@ -15,25 +15,45 @@ ConfigManager::~ConfigManager() {
 }
 
 ConfigManagerStatus ConfigManager::init() {
+
     if (!sdManager || !sdManager->isCardInitialized()) {
+        this->configInitialized = false;
         return ConfigManagerStatus::SD_ACCESS_ERROR;
     }
 
     constexpr int MAX_NUM_OF_TRIES { 5 };
     ConfigManagerStatus status {};
+
+    // Próba wczytania domyślnej konfiguracji
     for (int i { 0 }; i < MAX_NUM_OF_TRIES; ++i) {
-        status = loadConfig();
+        status = readConfigFromSD();
         if (status == ConfigManagerStatus::OK) {
-            this->configLoaded = true;
-            status = ConfigManagerStatus::OK;
-            break;
+            #ifdef DEBUG_CONFIG_MANAGER
+            Serial.println("DEBUG CONFIG: Konfiguracja wczytana z pliku");
+            #endif
+            this->configInitialized = true;
+            return ConfigManagerStatus::OK;
         }
     }
-    return status;
 
+    status = loadDefaultConfig();
+    if (status == ConfigManagerStatus::OK) {
+        #ifdef DEBUG_CONFIG_MANAGER
+        Serial.println("DEBUG CONFIG: Wczytano domyślną konfigurację");
+        #endif
+        this->configInitialized = true;
+        return ConfigManagerStatus::OK;
+    }
+
+    #ifdef DEBUG_CONFIG_MANAGER
+    Serial.println("ERROR CONFIG: NIE udało się zainicjować konfiguracji");
+    #endif
+    this->configInitialized = false;
+    return status;
 }
 
-ConfigManagerStatus ConfigManager::loadConfig() {
+ConfigManagerStatus ConfigManager::readConfigFromSD() {
+
     if (!sdManager->takeSD()) {
         return ConfigManagerStatus::SD_ACCESS_ERROR;
     }
@@ -63,7 +83,8 @@ ConfigManagerStatus ConfigManager::loadConfig() {
     return configFromJson(jsonString);
 }
 
-ConfigManagerStatus ConfigManager::saveConfig() {
+ConfigManagerStatus ConfigManager::writeConfigToSD() {
+
     if (!sdManager) {
         #ifdef DEBUG_CONFIG_MANAGER
         Serial.println("ERROR: SD Manager is nullptr");
@@ -106,23 +127,67 @@ ConfigManagerStatus ConfigManager::saveConfig() {
     return ConfigManagerStatus::OK;
 }
 
-MachineConfig ConfigManager::getConfig() {
+ConfigManagerStatus ConfigManager::loadDefaultConfig() {
+    if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
+        // Parametry osi X
+        config.X.stepsPerMM = DEFAULTS::X_STEPS_PER_MM;
+        config.X.rapidFeedRate = DEFAULTS::X_RAPID_FEEDRATE;
+        config.X.rapidAcceleration = DEFAULTS::X_RAPID_ACCELERATION;
+        config.X.workFeedRate = DEFAULTS::X_WORK_FEEDRATE;
+        config.X.workAcceleration = DEFAULTS::X_WORK_ACCELERATION;
+        config.X.offset = DEFAULTS::X_OFFSET;
+
+        // Parametry osi Y
+        config.Y.stepsPerMM = DEFAULTS::Y_STEPS_PER_MM;
+        config.Y.rapidFeedRate = DEFAULTS::Y_RAPID_FEEDRATE;
+        config.Y.rapidAcceleration = DEFAULTS::Y_RAPID_ACCELERATION;
+        config.Y.workFeedRate = DEFAULTS::Y_WORK_FEEDRATE;
+        config.Y.workAcceleration = DEFAULTS::Y_WORK_ACCELERATION;
+        config.Y.offset = DEFAULTS::Y_OFFSET;
+
+        // Pozostałe parametry
+        config.useGCodeFeedRate = DEFAULTS::USE_GCODE_FEEDRATE;
+        config.delayAfterStartup = DEFAULTS::DELAY_AFTER_STARTUP;
+        config.deactivateESTOP = DEFAULTS::DEACTIVATE_ESTOP;
+        config.deactivateLimitSwitches = DEFAULTS::DEACTIVATE_LIMIT_SWITCHES;
+        config.limitSwitchType = DEFAULTS::LIMIT_SWITCH_TYPE;
+
+        xSemaphoreGive(configMutex);
+        return ConfigManagerStatus::OK;
+    }
+    return ConfigManagerStatus::UNKNOWN_ERROR;
+}
+
+ConfigManagerStatus ConfigManager::getConfig(MachineConfig& targetConfig) {
+
+    if (!configInitialized) {
+        #ifdef DEBUG_CONFIG_MANAGER
+        Serial.println("DEBUG CONFIG: Configuration not loaded, cannot copy to struct");
+        #endif
+        return ConfigManagerStatus::MANAGER_NOT_INITIALIZED;
+    }
+
     MachineConfig configcpy {};
 
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        configcpy = config;
+        targetConfig = config;
         xSemaphoreGive(configMutex);
+
+        #ifdef DEBUG_CONFIG_MANAGER
+        Serial.println("DEBUG CONFIG: Configuration copied to target struct");
+        #endif
+        return ConfigManagerStatus::OK;
     }
 
-    return configcpy;
+    return ConfigManagerStatus::UNKNOWN_ERROR;
 }
 
-ConfigManagerStatus ConfigManager::setConfig(const MachineConfig& newConfig) {
+ConfigManagerStatus ConfigManager::updateConfig(const MachineConfig& newConfig) {
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
         config = newConfig;
         xSemaphoreGive(configMutex);
 
-        return saveConfig();
+        return writeConfigToSD();
     }
 
     return ConfigManagerStatus::UNKNOWN_ERROR;
@@ -149,7 +214,7 @@ String ConfigManager::configToJson() {
         yAxis["rapidFeedRate"] = config.Y.rapidFeedRate;
         yAxis["rapidAcceleration"] = config.Y.rapidAcceleration;
         yAxis["offset"] = config.Y.offset;
-        
+
         // Pozostałe parametry
         doc["useGCodeFeedRate"] = config.useGCodeFeedRate;
         doc["delayAfterStartup"] = config.delayAfterStartup;
@@ -187,7 +252,7 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
             if (xAxis["workAcceleration"].is<float>()) config.X.workAcceleration = xAxis["workAcceleration"].as<float>();
             if (xAxis["rapidFeedRate"].is<float>()) config.X.rapidFeedRate = xAxis["rapidFeedRate"].as<float>();
             if (xAxis["rapidAcceleration"].is<float>()) config.X.rapidAcceleration = xAxis["rapidAcceleration"].as<float>();
-            if (doc["offset"].is<float>()) config.X.offset = doc["offset"].as<float>();
+            if (xAxis["offset"].is<float>()) config.X.offset = xAxis["offset"].as<float>();
         }
 
         // Parametry dla osi Y
@@ -198,7 +263,7 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
             if (yAxis["workAcceleration"].is<float>()) config.Y.workAcceleration = yAxis["workAcceleration"].as<float>();
             if (yAxis["rapidFeedRate"].is<float>()) config.Y.rapidFeedRate = yAxis["rapidFeedRate"].as<float>();
             if (yAxis["rapidAcceleration"].is<float>()) config.Y.rapidAcceleration = yAxis["rapidAcceleration"].as<float>();
-            if (doc["offset"].is<float>()) config.Y.offset = doc["offset"].as<float>();
+            if (yAxis["offset"].is<float>()) config.Y.offset = yAxis["offset"].as<float>();
         }
 
         // Pozostałe parametry
@@ -222,6 +287,9 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
 
 template<typename T>
 ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName, T value) {
+    if (!configInitialized) {
+        init();
+    }
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
         // Aktualizacja wybranego parametru
         // Parametry osi X
@@ -251,7 +319,7 @@ ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName,
         xSemaphoreGive(configMutex);
 
         // Zapisz zaktualizowaną konfigurację
-        return saveConfig();
+        return writeConfigToSD();
     }
 
     return ConfigManagerStatus::UNKNOWN_ERROR;
@@ -261,7 +329,3 @@ ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName,
 template ConfigManagerStatus ConfigManager::updateParameter<float>(const std::string& paramName, float value);
 template ConfigManagerStatus ConfigManager::updateParameter<int>(const std::string& paramName, int value);
 template ConfigManagerStatus ConfigManager::updateParameter<bool>(const std::string& paramName, bool value);
-
-bool ConfigManager::isConfigLoaded() {
-    return configLoaded;
-}

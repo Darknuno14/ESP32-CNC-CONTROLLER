@@ -63,40 +63,16 @@ WebServerStatus WebServerManager::init() {
 }
 
 WebServerStatus WebServerManager::begin() {
-    // Check if the server is initialized
+
     if (server == nullptr) {
         return WebServerStatus::NOT_INITIALIZED;
     }
 
-    // Add the event source handler to the server
-    if (events != nullptr) {
-        server->addHandler(events);
-    }
-
-    // Setup the routes for the web server
+    server->addHandler(events);
     setupRoutes();
 
-    // Serve CSS files (z większym bezpieczeństwem)
-    if (LittleFS.exists("/css/styles.css")) {
-        server->serveStatic("/css/", LittleFS, "/css/")
-            .setCacheControl("max-age=86400")
-            .setTryGzipFirst(false);
-    }
-
-    // Serve JavaScript files (z większym bezpieczeństwem)
-    if (LittleFS.exists("/js/")) {
-        server->serveStatic("/js/", LittleFS, "/js/")
-            .setCacheControl("max-age=86400")
-            .setTryGzipFirst(false);
-    }
-
-    // Serve HTML and other files from root
-    server->serveStatic("/", LittleFS, "/")
-        .setDefaultFile("index.html")
-        .setTryGzipFirst(false);
 
 
-    // Start the web server
     server->begin();
     this->serverStarted = true;
 
@@ -106,40 +82,29 @@ WebServerStatus WebServerManager::begin() {
 void WebServerManager::setupRoutes() {
     if (server == nullptr) return;
 
-    server->on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-        #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Serving index.html\n");
-        #endif
-        request->send(LittleFS, "/index.html", "text/html");
-        });
-
-    server->on("/projects.html", HTTP_GET, [](AsyncWebServerRequest* request) {
-        #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Serving projects.html");
-        #endif
-        request->send(LittleFS, "/projects.html", "text/html");
-        });
-
-    server->on("/jog.html", HTTP_GET, [](AsyncWebServerRequest* request) {
-        #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Serving jog.html");
-        #endif
-        request->send(LittleFS, "/jog.html", "text/html");
-        });
-
-    server->on("/config.html", HTTP_GET, [](AsyncWebServerRequest* request) {
-        #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Serving config.html");
-        #endif
-        request->send(LittleFS, "/config.html", "text/html");
-        });
-
-
-
+    setupCommonRoutes();
     setupIndexRoutes();
     setupConfigRoutes();
     setupJogRoutes();
     setupProjectsRoutes();
+
+    if (LittleFS.exists("/css/styles.css")) {
+        server->serveStatic("/css/", LittleFS, "/css/")
+            .setCacheControl("max-age=86400")
+            .setTryGzipFirst(true);
+    }
+
+    // Serve JavaScript files (z większym bezpieczeństwem)
+    if (LittleFS.exists("/js/")) {
+        server->serveStatic("/js/", LittleFS, "/js/")
+            .setCacheControl("max-age=86400")
+            .setTryGzipFirst(true);
+    }
+
+    // Serve HTML and other files from root
+    server->serveStatic("/", LittleFS, "/")
+        .setDefaultFile("index.html")
+        .setTryGzipFirst(true);
 
     // Brak strony
     server->onNotFound([](AsyncWebServerRequest* request) {
@@ -148,6 +113,88 @@ void WebServerManager::setupRoutes() {
             request->methodToString());
         request->send(404, "text/plain", "404: Not found");
         });
+}
+
+void WebServerManager::setupCommonRoutes() {
+
+    // Status karty SD
+    server->on("/api/sd-status", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        String json = "{\"initialized\":" + String(this->sdManager->isCardInitialized() ? "true" : "false") + "}";
+        request->send(200, "application/json", json);
+        });
+
+
+    // Reinicjalizacja karty SD i ConfigManager
+    server->on("/api/reinitialize-sd", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: SD card reinitialization requested");
+        #endif
+
+        // Najpierw zainicjalizuj kartę SD
+        SDManagerStatus sdResult = this->sdManager->init();
+        bool sdSuccess = (sdResult == SDManagerStatus::OK);
+
+        bool configSuccess = false;
+        String message = "";
+
+        if (sdSuccess) {
+            #ifdef DEBUG_SERVER_ROUTES
+            Serial.println("DEBUG SERVER STATUS: SD card reinitialization successful");
+            #endif
+
+            // Następnie zainicjalizuj/reinicjalizuj ConfigManager
+            if (this->configManager) {
+                ConfigManagerStatus configResult = this->configManager->init();
+                configSuccess = (configResult == ConfigManagerStatus::OK);
+
+                if (configSuccess) {
+                    #ifdef DEBUG_SERVER_ROUTES
+                    Serial.println("DEBUG SERVER STATUS: Config manager reinitialized successfully");
+                    #endif
+                    message = "SD card and configuration reinitialized successfully";
+                }
+                else {
+                    #ifdef DEBUG_SERVER_ROUTES
+                    Serial.println("DEBUG SERVER WARNING: Config manager reinitialization failed");
+                    #endif
+                    message = "SD card reinitialized, but configuration failed";
+                }
+            }
+            else {
+                // Jeśli configManager nie istnieje, stwórz nowy
+                #ifdef DEBUG_SERVER_ROUTES
+                Serial.println("DEBUG SERVER WARNING: Creating new Config manager");
+                #endif
+                this->configManager = new ConfigManager(this->sdManager);
+                ConfigManagerStatus configResult = this->configManager->init();
+                configSuccess = (configResult == ConfigManagerStatus::OK);
+
+                if (configSuccess) {
+                    message = "SD card reinitialized and new configuration manager created";
+                }
+                else {
+                    message = "SD card reinitialized, but failed to create configuration manager";
+                }
+            }
+
+            // Zaktualizuj listę projektów
+            this->sdManager->updateProjectList();
+        }
+        else {
+            message = "Failed to reinitialize SD card";
+        }
+
+        // Odpowiedź JSON ze szczegółowymi informacjami
+        JsonDocument doc {};
+        doc["success"] = sdSuccess;
+        doc["configSuccess"] = configSuccess;
+        doc["message"] = message;
+
+        String jsonResponse;
+        serializeJson(doc, jsonResponse);
+        request->send(200, "application/json", jsonResponse);
+        });
+
 }
 
 void WebServerManager::setupIndexRoutes() {
@@ -184,65 +231,9 @@ void WebServerManager::setupIndexRoutes() {
 
         request->send(200, "application/json", "{\"success\":true}");
         });
-
-    // Aktualizacja statusu maszyny
-    server->on("/api/update-machine-status", HTTP_GET, [this](AsyncWebServerRequest* request) {
-        #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Machine status requested");
-        #endif
-    
-        // Pobierz najnowszy stan z kolejki (jeśli dostępny)
-        MachineState currentState {};
-        if (xQueuePeek(stateQueue, &currentState, 0) != pdTRUE) {
-            // Jeśli nie udało się pobrać, użyj domyślnego/pustego stanu
-            #ifdef DEBUG_SERVER_ROUTES
-            Serial.println("DEBUG SERVER STATUS: Brak nowego statusu w kolejce, zwracam domyślny stan.");
-            #endif
-        }
-    
-        JsonDocument doc {};
-    
-        // Stan maszyny
-        doc["state"] = static_cast<int>(currentState.state);
-        doc["isPaused"] = currentState.isPaused;
-        doc["errorID"] = currentState.errorID;
-    
-        // Pozycja
-        doc["currentX"] = currentState.currentX;
-        doc["currentY"] = currentState.currentY;
-        doc["relativeMode"] = currentState.relativeMode;
-    
-        // Stan urządzeń
-        doc["hotWireOn"] = currentState.hotWireOn;
-        doc["fanOn"] = currentState.fanOn;
-        doc["hotWirePower"] = currentState.hotWirePower;
-        doc["fanPower"] = currentState.fanPower;
-    
-        // Informacje o zadaniu
-        doc["currentProject"] = String(currentState.currentProject);
-        doc["jobProgress"] = currentState.jobProgress;
-        doc["currentLine"] = currentState.currentLine;
-        doc["totalLines"] = currentState.totalLines;
-        doc["jobStartTime"] = currentState.jobStartTime;
-        doc["jobRunTime"] = currentState.jobRunTime;
-    
-        // Stan IO
-        doc["estopOn"] = currentState.estopOn;
-        doc["limitXOn"] = currentState.limitXOn;
-        doc["limitYOn"] = currentState.limitYOn;
-    
-        // Konwersja JSON na string
-        String jsonString;
-        serializeJson(doc, jsonString);
-    
-        // Wysłanie odpowiedzi
-        request->send(200, "application/json", jsonString);
-    });
 }
 
 void WebServerManager::setupConfigRoutes() {
-
-
     // Pobieranie konfiguracji
     server->on("/api/config", HTTP_GET, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
@@ -254,7 +245,24 @@ void WebServerManager::setupConfigRoutes() {
             return;
         }
 
+         // Force reload from SD if available
+        if (this->sdManager->isCardInitialized()) {
+            ConfigManagerStatus status = this->configManager->readConfigFromSD();
+            if (status != ConfigManagerStatus::OK) {
+                #ifdef DEBUG_SERVER_ROUTES
+                Serial.println("DEBUG SERVER WARNING: Failed to read config from SD, using current config");
+                #endif
+            }
+        }
+
         String jsonConfig = this->configManager->configToJson();
+        
+        #ifdef DEBUG_SERVER_ROUTES        
+        Serial.println("DEBUG: Generated JSON config:");
+        Serial.println(jsonConfig);
+        #endif
+        
+        // Add proper headers
         request->send(200, "application/json", jsonConfig);
         });
 
@@ -265,18 +273,10 @@ void WebServerManager::setupConfigRoutes() {
         },
         NULL,
         [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-            static String jsonBuffer;
-
-            if (index == 0) jsonBuffer = "";
-
-            for (size_t i = 0; i < len; i++) {
-                jsonBuffer += (char)data[i];
-            }
-
-            if (index + len == total) {
+            processJsonRequest(request, data, len, index, total, 2048, [this, request](const String& jsonStr) {
                 #ifdef DEBUG_SERVER_ROUTES
                 Serial.println("DEBUG SERVER STATUS: Processing complete config");
-                Serial.println("DEBUG SERVER: Received JSON: " + jsonBuffer);
+                Serial.println("DEBUG SERVER: Received JSON: " + jsonStr);
                 #endif
 
                 if (!this->configManager) {
@@ -284,11 +284,11 @@ void WebServerManager::setupConfigRoutes() {
                     return;
                 }
 
-                ConfigManagerStatus status = this->configManager->configFromJson(jsonBuffer);
+                ConfigManagerStatus status = this->configManager->configFromJson(jsonStr);
                 String message;
 
                 if (status == ConfigManagerStatus::OK) {
-                    status = this->configManager->saveConfig();
+                    status = this->configManager->writeConfigToSD();
                 }
 
                 switch (status) {
@@ -315,7 +315,7 @@ void WebServerManager::setupConfigRoutes() {
                 String response = "{\"success\":" + String(status == ConfigManagerStatus::OK ? "true" : "false") +
                     ",\"message\":\"" + message + "\"}";
                 request->send(status == ConfigManagerStatus::OK ? 200 : 400, "application/json", response);
-            }
+            });
         });
 }
 
@@ -327,22 +327,14 @@ void WebServerManager::setupJogRoutes() {
         },
         NULL,
         [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-            static String jsonBuffer;
-
-            if (index == 0) jsonBuffer = "";
-
-            for (size_t i = 0; i < len; i++) {
-                jsonBuffer += (char)data[i];
-            }
-
-            if (index + len == total) {
+            processJsonRequest(request, data, len, index, total, 512, [this, request](const String& jsonStr) {
                 #ifdef DEBUG_SERVER_ROUTES
                 Serial.println("DEBUG SERVER STATUS: Processing JOG command");
-                Serial.println("DEBUG SERVER: Received JSON: " + jsonBuffer);
+                Serial.println("DEBUG SERVER: Received JSON: " + jsonStr);
                 #endif
 
                 JsonDocument doc;
-                DeserializationError error = deserializeJson(doc, jsonBuffer);
+                DeserializationError error = deserializeJson(doc, jsonStr);
 
                 if (error) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON format\"}");
@@ -367,7 +359,7 @@ void WebServerManager::setupJogRoutes() {
                 this->sendCommand(CommandType::JOG, x, y, speed);
 
                 request->send(200, "application/json", "{\"success\":true}");
-            }
+            });
         }
     );
 
@@ -378,22 +370,14 @@ void WebServerManager::setupJogRoutes() {
         },
         NULL,
         [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-            static String jsonBuffer;
-
-            if (index == 0) jsonBuffer = "";
-
-            for (size_t i = 0; i < len; i++) {
-                jsonBuffer += (char)data[i];
-            }
-
-            if (index + len == total) {
+            processJsonRequest(request, data, len, index, total, 256, [this, request](const String& jsonStr) {
                 #ifdef DEBUG_SERVER_ROUTES
                 Serial.println("DEBUG SERVER STATUS: Processing wire control command");
-                Serial.println("DEBUG SERVER: Received JSON: " + jsonBuffer);
+                Serial.println("DEBUG SERVER: Received JSON: " + jsonStr);
                 #endif
 
                 JsonDocument doc;
-                DeserializationError error = deserializeJson(doc, jsonBuffer);
+                DeserializationError error = deserializeJson(doc, jsonStr);
 
                 if (error) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON format\"}");
@@ -417,7 +401,7 @@ void WebServerManager::setupJogRoutes() {
                 this->sendCommand(CommandType::JOG, -1, -1, state ? 1.0 : 0.0);
 
                 request->send(200, "application/json", "{\"success\":true}");
-            }
+            });
         }
     );
 
@@ -428,22 +412,14 @@ void WebServerManager::setupJogRoutes() {
         },
         NULL,
         [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-            static String jsonBuffer;
-
-            if (index == 0) jsonBuffer = "";
-
-            for (size_t i = 0; i < len; i++) {
-                jsonBuffer += (char)data[i];
-            }
-
-            if (index + len == total) {
+            processJsonRequest(request, data, len, index, total, 256, [this, request](const String& jsonStr) {
                 #ifdef DEBUG_SERVER_ROUTES
                 Serial.println("DEBUG SERVER STATUS: Processing fan control command");
-                Serial.println("DEBUG SERVER: Received JSON: " + jsonBuffer);
+                Serial.println("DEBUG SERVER: Received JSON: " + jsonStr);
                 #endif
 
                 JsonDocument doc;
-                DeserializationError error = deserializeJson(doc, jsonBuffer);
+                DeserializationError error = deserializeJson(doc, jsonStr);
 
                 if (error) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON format\"}");
@@ -467,7 +443,7 @@ void WebServerManager::setupJogRoutes() {
                 this->sendCommand(CommandType::JOG, -2, -2, state ? 1.0 : 0.0);
 
                 request->send(200, "application/json", "{\"success\":true}");
-            }
+            });
         }
     );
 
@@ -488,41 +464,40 @@ void WebServerManager::setupJogRoutes() {
 void WebServerManager::setupProjectsRoutes() {
 
     server->on("/api/sd_content", HTTP_GET, [this](AsyncWebServerRequest* request) {
-        // Sprawdź, czy parametr file istnieje
         if (!request->hasParam("file")) {
             request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing file parameter\"}");
             return;
         }
 
-        // Pobierz nazwę pliku z parametru
+
         String filename = request->getParam("file")->value();
+        String filePath = String(CONFIG::PROJECTS_DIR) + filename;
 
         #ifdef DEBUG_SERVER_ROUTES
         Serial.printf("DEBUG SERVER: Requested SD file content: %s\n", filename.c_str());
         #endif
 
-        // Utwórz pełną ścieżkę do pliku na karcie SD
-        String filePath = String(CONFIG::PROJECTS_DIR) + filename;
-
-        // Sprawdź dostępność karty SD
         if (!this->sdManager->takeSD()) {
-            request->send(503, "application/json", "{\"success\":false,\"message\":\"SD card is busy\"}");
+            request->send(503, "application/json", "{\"error\":\"SD busy\"}");
             return;
         }
 
-        // Sprawdź, czy plik istnieje
         if (!SD.exists(filePath)) {
-            Serial.printf("File not found: %s\n", filePath.c_str());
             this->sdManager->giveSD();
-            request->send(404, "application/json", "{\"success\":false,\"message\":\"File not found\"}");
+            request->send(404, "application/json", "{\"error\":\"File not found\"}");
             return;
         }
 
-        // Wyślij zawartość pliku
-        request->send(SD, filePath, "text/plain");
+        this->busy = true;
+        AsyncWebServerResponse* response = request->beginResponse(SD, filePath, "text/plain");
+        response->addHeader("Cache-Control", "no-cache");
 
-        // Zwolnij blokadę karty SD
-        this->sdManager->giveSD();
+        request->onDisconnect([this]() {
+            this->busy = false;
+            this->sdManager->giveSD();
+            });
+
+        request->send(response);
         });
 
     // Lista plików
@@ -654,86 +629,6 @@ void WebServerManager::setupProjectsRoutes() {
         request->send(success ? 200 : 400, "application/json", response);
         });
 
-        
-
-    // Status karty SD
-    server->on("/api/sd-status", HTTP_GET, [this](AsyncWebServerRequest* request) {
-        String json = "{\"initialized\":" + String(this->sdManager->isCardInitialized() ? "true" : "false") + "}";
-        request->send(200, "application/json", json);
-        });
-
-
-    // Reinicjalizacja karty SD i ConfigManager
-    server->on("/api/reinitialize-sd", HTTP_POST, [this](AsyncWebServerRequest* request) {
-        #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: SD card reinitialization requested");
-        #endif
-
-        // Najpierw zainicjalizuj kartę SD
-        SDManagerStatus sdResult = this->sdManager->init();
-        bool sdSuccess = (sdResult == SDManagerStatus::OK);
-
-        bool configSuccess = false;
-        String message = "";
-
-        if (sdSuccess) {
-            #ifdef DEBUG_SERVER_ROUTES
-            Serial.println("DEBUG SERVER STATUS: SD card reinitialization successful");
-            #endif
-
-            // Następnie zainicjalizuj/reinicjalizuj ConfigManager
-            if (this->configManager) {
-                ConfigManagerStatus configResult = this->configManager->init();
-                configSuccess = (configResult == ConfigManagerStatus::OK);
-
-                if (configSuccess) {
-                    #ifdef DEBUG_SERVER_ROUTES
-                    Serial.println("DEBUG SERVER STATUS: Config manager reinitialized successfully");
-                    #endif
-                    message = "SD card and configuration reinitialized successfully";
-                }
-                else {
-                    #ifdef DEBUG_SERVER_ROUTES
-                    Serial.println("DEBUG SERVER WARNING: Config manager reinitialization failed");
-                    #endif
-                    message = "SD card reinitialized, but configuration failed";
-                }
-            }
-            else {
-                // Jeśli configManager nie istnieje, stwórz nowy
-                #ifdef DEBUG_SERVER_ROUTES
-                Serial.println("DEBUG SERVER WARNING: Creating new Config manager");
-                #endif
-                this->configManager = new ConfigManager(this->sdManager);
-                ConfigManagerStatus configResult = this->configManager->init();
-                configSuccess = (configResult == ConfigManagerStatus::OK);
-
-                if (configSuccess) {
-                    message = "SD card reinitialized and new configuration manager created";
-                }
-                else {
-                    message = "SD card reinitialized, but failed to create configuration manager";
-                }
-            }
-
-            // Zaktualizuj listę projektów
-            this->sdManager->updateProjectList();
-        }
-        else {
-            message = "Failed to reinitialize SD card";
-        }
-
-        // Odpowiedź JSON ze szczegółowymi informacjami
-        JsonDocument doc {};
-        doc["success"] = sdSuccess;
-        doc["configSuccess"] = configSuccess;
-        doc["message"] = message;
-
-        String jsonResponse;
-        serializeJson(doc, jsonResponse);
-        request->send(200, "application/json", jsonResponse);
-        });
-
     // Usuwanie plików
     server->on("/api/delete-file", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
@@ -800,10 +695,90 @@ void WebServerManager::sendCommand(CommandType type, float param1, float param2,
     }
 }
 
+void WebServerManager::broadcastMachineStatus() {
+    MachineState currentState {};
+    if (xQueuePeek(stateQueue, &currentState, 0) == pdTRUE) {
+        // Use stack-allocated buffer instead of dynamic String
+        char jsonBuffer[1024];
+
+        JsonDocument doc;
+        doc["state"] = static_cast<int>(currentState.state);
+        doc["isPaused"] = currentState.isPaused;
+        doc["errorID"] = currentState.errorID;
+        doc["currentX"] = currentState.currentX;
+        doc["currentY"] = currentState.currentY;
+        doc["relativeMode"] = currentState.relativeMode;
+        doc["hotWireOn"] = currentState.hotWireOn;
+        doc["fanOn"] = currentState.fanOn;
+        doc["hotWirePower"] = currentState.hotWirePower;
+        doc["fanPower"] = currentState.fanPower;
+        doc["currentProject"] = String(currentState.currentProject);
+        doc["jobProgress"] = currentState.jobProgress;
+        doc["currentLine"] = currentState.currentLine;
+        doc["totalLines"] = currentState.totalLines;
+        doc["jobStartTime"] = currentState.jobStartTime;
+        doc["jobRunTime"] = currentState.jobRunTime;
+        doc["estopOn"] = currentState.estopOn;
+        doc["limitXOn"] = currentState.limitXOn;
+        doc["limitYOn"] = currentState.limitYOn;
+
+        // Serialize directly to fixed buffer
+        size_t len = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
+        if (len < sizeof(jsonBuffer)) {
+            sendEvent("machine-status", jsonBuffer);
+        }
+    }
+}
+
 void WebServerManager::sendEvent(const char* event, const char* data) {
     if (events && eventsInitialized && event && data) {
         events->send(data, event, millis());
     }
+}
+
+bool WebServerManager::isBusy() {
+    return this->busy;
+}
+
+bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_t* data, size_t len, 
+                           size_t index, size_t total, size_t bufferSize,
+                           std::function<void(const String&)> processor) {
+    static char* jsonBuffer = nullptr;
+    static size_t bufferPos = 0;
+    static size_t currentBufferSize = 0;
+    
+    if (index == 0) {
+        if (jsonBuffer) free(jsonBuffer);
+        jsonBuffer = (char*)malloc(bufferSize);
+        if (!jsonBuffer) {
+            request->send(500, "application/json", "{\"success\":false,\"message\":\"Memory allocation failed\"}");
+            return false;
+        }
+        
+        bufferPos = 0;
+        currentBufferSize = bufferSize;
+        memset(jsonBuffer, 0, bufferSize);
+    }
+    
+    if (bufferPos + len >= currentBufferSize) {
+        if (jsonBuffer) free(jsonBuffer);
+        jsonBuffer = nullptr;
+        request->send(413, "application/json", "{\"success\":false,\"message\":\"Request too large\"}");
+        return false;
+    }
+    
+    memcpy(jsonBuffer + bufferPos, data, len);
+    bufferPos += len;
+    
+    if (index + len == total) {
+        jsonBuffer[bufferPos] = '\0';
+        processor(String(jsonBuffer));
+        free(jsonBuffer);
+        jsonBuffer = nullptr;
+        return true;
+    }
+    
+    return true;
 }
 
 

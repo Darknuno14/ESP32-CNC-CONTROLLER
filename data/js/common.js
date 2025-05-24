@@ -2,46 +2,36 @@
  * Wspólne funkcje dla wszystkich stron ESP32 CNC
  */
 
-function initEventSource() {
+// Ujednolicona obsługa EventSource z możliwością przekazania callbacka
+function handleEventSource(onMachineStatus) {
   if (window.eventSource) {
-    console.log("Closing existing EventSource connection");
     window.eventSource.close();
   }
-
-  console.log("Initializing EventSource connection...");
   window.eventSource = new EventSource("/events");
+
+  if (typeof onMachineStatus === "function") {
+    window.eventSource.addEventListener("machine-status", function (e) {
+      try {
+        const data = JSON.parse(e.data);
+        onMachineStatus(data);
+      } catch (error) {
+        console.error("Error parsing EventSource data:", error);
+      }
+    });
+  }
 
   window.eventSource.addEventListener("message", function (e) {
     console.log("Generic message received:", e.data);
-  });
-
-  window.eventSource.addEventListener("machine-status", function (e) {
-    console.log("Machine status update received:", e.data);
-    try {
-      const data = JSON.parse(e.data);
-      // Handle based on which page we're on
-      if (typeof updateUIWithMachineState === "function") {
-        updateUIWithMachineState(data);
-      } else if (typeof updateMachineStatus === "function") {
-        // Some pages might have different update functions
-        updateMachineStatus(data);
-      }
-    } catch (error) {
-      console.error("Error parsing EventSource data:", error);
-    }
   });
 
   window.eventSource.onopen = function () {
     console.log("EventSource connection established");
   };
 
-  window.eventSource.onerror = function (e) {
-    console.error("EventSource error:", e);
-
-    // If connection closed, try to reconnect after delay
-    setTimeout(function () {
-      console.log("Attempting to reconnect EventSource...");
-      initEventSource();
+  window.eventSource.onerror = function () {
+    console.error("EventSource error");
+    setTimeout(() => {
+      handleEventSource(onMachineStatus);
     }, 5000);
   };
 }
@@ -138,9 +128,6 @@ function reinitializeSD() {
 // Aktualizacja statusu przy załadowaniu strony
 document.addEventListener("DOMContentLoaded", () => {
   updateSDStatus();
-
-  // Ustaw okresową aktualizację statusu co 5 sekund
-  setInterval(updateSDStatus, 5000);
 });
 
 function debugFetch(url, options = {}) {

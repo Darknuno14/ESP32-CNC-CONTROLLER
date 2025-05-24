@@ -5,19 +5,30 @@
 // --- Ścieżka ruchu maszyny ---
 let pathPoints = [];
 let lastX = null, lastY = null;
+let eventSource;
 
-// Aktualizacja statusu maszyny (cyklicznie lub przez EventSource)
-function updateMachineStatus() {
-  fetch("/api/update-machine-status")
-    .then((response) => response.json())
-    .then((data) => {
+// --- Helper Functions ---
+
+function handleEventSource() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource('/events');
+  eventSource.addEventListener('machine-status', function(e) {
+    try {
+      const data = JSON.parse(e.data);
       updateUIWithMachineState(data);
       updatePathCanvas(data.currentX, data.currentY);
-    })
-    .catch((error) => {
-      console.error("Error fetching machine status:", error);
-    });
+    } catch (error) {
+      console.error("Error parsing EventSource data:", error);
+    }
+  });
+  eventSource.onopen = () => console.log("EventSource connection established");
+  eventSource.onerror = () => {
+    console.error("EventSource error");
+    setTimeout(handleEventSource, 5000);
+  };
 }
+
+// --- Main Functions ---
 
 // Aktualizacja interfejsu na podstawie danych o stanie maszyny
 function updateUIWithMachineState(data) {
@@ -157,26 +168,6 @@ function drawPath() {
   }
 }
 
-// Obsługa resetowania ścieżki
-document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("resetPathBtn")?.addEventListener("click", () => {
-    pathPoints = [];
-    lastX = null;
-    lastY = null;
-    drawPath();
-  });
-
-  // Obsługa przycisków start/pause/stop
-  document.getElementById("startBtn")?.addEventListener("click", startProcessing);
-  document.getElementById("pauseBtn")?.addEventListener("click", pauseProcessing);
-  document.getElementById("stopBtn")?.addEventListener("click", stopProcessing);
-
-  // Cykliczne pobieranie statusu
-  setInterval(updateMachineStatus, 500);
-  updateMachineStatus();
-  drawPath();
-});
-
 // Funkcje sterowania maszyną
 function startProcessing() {
   fetch("/api/start", { method: "POST" })
@@ -225,3 +216,20 @@ function showMessage(msg, type = "success") {
     msgContainer.style.display = "none";
   }, 3000);
 }
+
+// --- Initialization ---
+
+document.addEventListener("DOMContentLoaded", () => {
+  handleEventSource();
+
+  document.getElementById("resetPathBtn")?.addEventListener("click", () => {
+    pathPoints = [];
+    lastX = null;
+    lastY = null;
+    drawPath();
+  });
+
+  document.getElementById("startBtn")?.addEventListener("click", startProcessing);
+  document.getElementById("pauseBtn")?.addEventListener("click", pauseProcessing);
+  document.getElementById("stopBtn")?.addEventListener("click", stopProcessing);
+});

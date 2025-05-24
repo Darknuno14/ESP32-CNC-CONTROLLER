@@ -39,12 +39,23 @@ class WebServerManager {
     // Track server startup status
     bool serverStarted { false };
 
+    // Flag to indicate if the server is busy processing requests
+    volatile bool busy { false };
+
     // Sets up all server routes and handlers
     void setupRoutes();
+    void setupCommonRoutes();
     void setupIndexRoutes();
     void setupConfigRoutes();
     void setupJogRoutes();
     void setupProjectsRoutes();
+
+    static constexpr size_t JSON_BUFFER_SIZE = 1024;
+    static constexpr size_t SMALL_JSON_BUFFER_SIZE = 256;
+    
+    bool processJsonRequest(AsyncWebServerRequest* request, uint8_t* data, size_t len, 
+                           size_t index, size_t total, size_t bufferSize,
+                           std::function<void(const String&)> processor);
 
     public:
 
@@ -76,4 +87,8 @@ class WebServerManager {
     void sendCommand(CommandType type, float param1 = 0.0f, float param2 = 0.0f, float param3 = 0.0f);
 
     void sendEvent(const char* event, const char* data);
+
+    void broadcastMachineStatus();
+
+    bool isBusy();
 };

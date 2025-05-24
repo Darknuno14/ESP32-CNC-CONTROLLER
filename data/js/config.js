@@ -5,7 +5,28 @@
 // Zmienna do przechowywania EventSource
 let eventSource;
 
-// Funkcja do wczytywania konfiguracji z ESP32
+// --- Helper Functions ---
+
+function handleEventSource() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource("/events");
+  eventSource.addEventListener("machine-status", function (e) {
+    try {
+      const data = JSON.parse(e.data);
+      updateMachineStatus(data);
+    } catch (error) {
+      console.error("Error parsing EventSource data:", error);
+    }
+  });
+  eventSource.onopen = () => console.log("EventSource connection established");
+  eventSource.onerror = () => {
+    console.error("EventSource error");
+    setTimeout(handleEventSource, 5000);
+  };
+}
+
+// --- Main Functions ---
+
 function loadConfiguration() {
   document.getElementById("loadingSpinner").style.display = "inline-block";
   document.getElementById("loadBtn").disabled = true;
@@ -17,39 +38,54 @@ function loadConfiguration() {
       return response.json();
     })
     .then((config) => {
+      console.log("Loaded config:", config); // Debug log
+      
+      // X Axis configuration - POPRAWIONA STRUKTURA
       if (config.xAxis) {
-        document.getElementById("xStepsPerMM").value = config.xAxis.stepsPerMM;
-        document.getElementById("xWorkFeedRate").value =
-          config.xAxis.workFeedRate;
-        document.getElementById("xWorkAcceleration").value =
-          config.xAxis.workAcceleration;
-        document.getElementById("xRapidFeedRate").value =
-          config.xAxis.rapidFeedRate;
-        document.getElementById("xRapidAcceleration").value =
-          config.xAxis.rapidAcceleration;
+        const xStepsPerMM = document.getElementById("xStepsPerMM");
+        const xWorkFeedRate = document.getElementById("xWorkFeedRate");
+        const xWorkAcceleration = document.getElementById("xWorkAcceleration");
+        const xRapidFeedRate = document.getElementById("xRapidFeedRate");
+        const xRapidAcceleration = document.getElementById("xRapidAcceleration");
+        const offsetX = document.getElementById("offsetX");
+        
+        if (xStepsPerMM) xStepsPerMM.value = config.xAxis.stepsPerMM || 0;
+        if (xWorkFeedRate) xWorkFeedRate.value = config.xAxis.workFeedRate || 0;
+        if (xWorkAcceleration) xWorkAcceleration.value = config.xAxis.workAcceleration || 0;
+        if (xRapidFeedRate) xRapidFeedRate.value = config.xAxis.rapidFeedRate || 0;
+        if (xRapidAcceleration) xRapidAcceleration.value = config.xAxis.rapidAcceleration || 0;
+        if (offsetX) offsetX.value = config.xAxis.offset || 0;
       }
+      
+      // Y Axis configuration - POPRAWIONA STRUKTURA
       if (config.yAxis) {
-        document.getElementById("yStepsPerMM").value = config.yAxis.stepsPerMM;
-        document.getElementById("yWorkFeedRate").value =
-          config.yAxis.workFeedRate;
-        document.getElementById("yWorkAcceleration").value =
-          config.yAxis.workAcceleration;
-        document.getElementById("yRapidFeedRate").value =
-          config.yAxis.rapidFeedRate;
-        document.getElementById("yRapidAcceleration").value =
-          config.yAxis.rapidAcceleration;
+        const yStepsPerMM = document.getElementById("yStepsPerMM");
+        const yWorkFeedRate = document.getElementById("yWorkFeedRate");
+        const yWorkAcceleration = document.getElementById("yWorkAcceleration");
+        const yRapidFeedRate = document.getElementById("yRapidFeedRate");
+        const yRapidAcceleration = document.getElementById("yRapidAcceleration");
+        const offsetY = document.getElementById("offsetY");
+        
+        if (yStepsPerMM) yStepsPerMM.value = config.yAxis.stepsPerMM || 0;
+        if (yWorkFeedRate) yWorkFeedRate.value = config.yAxis.workFeedRate || 0;
+        if (yWorkAcceleration) yWorkAcceleration.value = config.yAxis.workAcceleration || 0;
+        if (yRapidFeedRate) yRapidFeedRate.value = config.yAxis.rapidFeedRate || 0;
+        if (yRapidAcceleration) yRapidAcceleration.value = config.yAxis.rapidAcceleration || 0;
+        if (offsetY) offsetY.value = config.yAxis.offset || 0;
       }
-      document.getElementById("offsetX").value = config.offsetX;
-      document.getElementById("offsetY").value = config.offsetY;
-      document.getElementById("useGCodeFeedRate").checked =
-        config.useGCodeFeedRate;
-      document.getElementById("delayAfterStartup").value =
-        config.delayAfterStartup;
-      document.getElementById("deactivateESTOP").checked =
-        config.deactivateESTOP;
-      document.getElementById("deactivateLimitSwitches").checked =
-        config.deactivateLimitSwitches;
-      document.getElementById("limitSwitchType").value = config.limitSwitchType;
+      
+      // General configuration
+      const useGCodeFeedRate = document.getElementById("useGCodeFeedRate");
+      const delayAfterStartup = document.getElementById("delayAfterStartup");
+      const deactivateESTOP = document.getElementById("deactivateESTOP");
+      const deactivateLimitSwitches = document.getElementById("deactivateLimitSwitches");
+      const limitSwitchType = document.getElementById("limitSwitchType");
+      
+      if (useGCodeFeedRate) useGCodeFeedRate.checked = config.useGCodeFeedRate || false;
+      if (delayAfterStartup) delayAfterStartup.value = config.delayAfterStartup || 0;
+      if (deactivateESTOP) deactivateESTOP.checked = config.deactivateESTOP || false;
+      if (deactivateLimitSwitches) deactivateLimitSwitches.checked = config.deactivateLimitSwitches || false;
+      if (limitSwitchType) limitSwitchType.value = config.limitSwitchType || 0;
 
       showMessage("Configuration loaded successfully");
       document.getElementById("saveBtn").disabled = false;
@@ -64,7 +100,6 @@ function loadConfiguration() {
     });
 }
 
-// Funkcja do zapisywania konfiguracji
 function saveConfiguration(event) {
   event.preventDefault();
 
@@ -78,29 +113,32 @@ function saveConfiguration(event) {
 
   const formData = new FormData(document.getElementById("configForm"));
 
+  // POPRAWIONA STRUKTURA JSON DO WYSYŁANIA
   const config = {
     xAxis: {
-      stepsPerMM: parseFloat(formData.get("xAxis.stepsPerMM")),
-      workFeedRate: parseFloat(formData.get("xAxis.workFeedRate")),
-      workAcceleration: parseFloat(formData.get("xAxis.workAcceleration")),
-      rapidFeedRate: parseFloat(formData.get("xAxis.rapidFeedRate")),
-      rapidAcceleration: parseFloat(formData.get("xAxis.rapidAcceleration")),
+      stepsPerMM: parseFloat(formData.get("xAxis.stepsPerMM")) || 0,
+      workFeedRate: parseFloat(formData.get("xAxis.workFeedRate")) || 0,
+      workAcceleration: parseFloat(formData.get("xAxis.workAcceleration")) || 0,
+      rapidFeedRate: parseFloat(formData.get("xAxis.rapidFeedRate")) || 0,
+      rapidAcceleration: parseFloat(formData.get("xAxis.rapidAcceleration")) || 0,
+      offset: parseFloat(formData.get("xAxis.offset")) || 0,
     },
     yAxis: {
-      stepsPerMM: parseFloat(formData.get("yAxis.stepsPerMM")),
-      workFeedRate: parseFloat(formData.get("yAxis.workFeedRate")),
-      workAcceleration: parseFloat(formData.get("yAxis.workAcceleration")),
-      rapidFeedRate: parseFloat(formData.get("yAxis.rapidFeedRate")),
-      rapidAcceleration: parseFloat(formData.get("yAxis.rapidAcceleration")),
+      stepsPerMM: parseFloat(formData.get("yAxis.stepsPerMM")) || 0,
+      workFeedRate: parseFloat(formData.get("yAxis.workFeedRate")) || 0,
+      workAcceleration: parseFloat(formData.get("yAxis.workAcceleration")) || 0,
+      rapidFeedRate: parseFloat(formData.get("yAxis.rapidFeedRate")) || 0,
+      rapidAcceleration: parseFloat(formData.get("yAxis.rapidAcceleration")) || 0,
+      offset: parseFloat(formData.get("yAxis.offset")) || 0,
     },
-    offsetX: parseFloat(formData.get("offsetX")),
-    offsetY: parseFloat(formData.get("offsetY")),
     useGCodeFeedRate: formData.get("useGCodeFeedRate") === "on",
-    delayAfterStartup: parseInt(formData.get("delayAfterStartup")),
+    delayAfterStartup: parseInt(formData.get("delayAfterStartup")) || 0,
     deactivateESTOP: formData.get("deactivateESTOP") === "on",
     deactivateLimitSwitches: formData.get("deactivateLimitSwitches") === "on",
-    limitSwitchType: parseInt(formData.get("limitSwitchType")),
+    limitSwitchType: parseInt(formData.get("limitSwitchType")) || 0,
   };
+
+  console.log("Saving config:", config); // Debug log
 
   fetch("/api/config", {
     method: "POST",
@@ -130,53 +168,47 @@ function saveConfiguration(event) {
     });
 }
 
-// Funkcja do sprawdzania poprawności wprowadzonych wartości
 function validateForm() {
   let isValid = true;
   const inputs = document.querySelectorAll('#configForm input[type="number"]');
-
   inputs.forEach((input) => {
-    // Usuń poprzednie klasy walidacji
     input.classList.remove("is-invalid");
-
     const value = parseFloat(input.value);
-
     if (isNaN(value)) {
       input.classList.add("is-invalid");
       isValid = false;
     }
   });
-
   return isValid;
 }
 
-// Inicjalizacja EventSource dla aktualizacji w czasie rzeczywistym
-function initEventSource() {
-  if (eventSource) {
-    eventSource.close();
-  }
+// --- Initialization ---
 
-  eventSource = new EventSource("/events");
+document.addEventListener("DOMContentLoaded", function () {
+  handleEventSource();
 
-  eventSource.addEventListener("machine-status", function (e) {
-    try {
-      const data = JSON.parse(e.data);
-      updateMachineStatus(data);
-    } catch (error) {
-      console.error("Error parsing EventSource data:", error);
-    }
-  });
+  document
+    .getElementById("loadBtn")
+    .addEventListener("click", loadConfiguration);
 
-  eventSource.onopen = function () {
-    console.log("EventSource connection established");
-  };
+  document
+    .getElementById("configForm")
+    .addEventListener("submit", saveConfiguration);
 
-  eventSource.onerror = function (e) {
-    console.error("EventSource error:", e);
-    // Spróbuj ponownie połączyć po 5 sekundach
-    setTimeout(initEventSource, 5000);
-  };
-}
+  document
+    .querySelectorAll('#configForm input[type="number"]')
+    .forEach((input) => {
+      input.addEventListener("input", function () {
+        if (parseFloat(this.value) < 0 && this.id !== "wireTemperature") {
+          this.classList.add("is-invalid");
+        } else {
+          this.classList.remove("is-invalid");
+        }
+      });
+    });
+
+  loadConfiguration();
+});
 
 // Aktualizacja stanu kontrolek na podstawie stanu maszyny
 function updateMachineStatus(data) {
@@ -187,36 +219,3 @@ function updateMachineStatus(data) {
     saveBtn.disabled = data.state === 1 || data.state === 2 || data.state === 3;
   }
 }
-
-// Podłącz zdarzenia po załadowaniu strony
-document.addEventListener("DOMContentLoaded", function () {
-  // Inicjalizacja EventSource
-  initEventSource();
-
-  // Obsługa przycisku wczytywania konfiguracji
-  document
-    .getElementById("loadBtn")
-    .addEventListener("click", loadConfiguration);
-
-  // Obsługa zapisywania konfiguracji
-  document
-    .getElementById("configForm")
-    .addEventListener("submit", saveConfiguration);
-
-  // Dodaj walidację do wszystkich pól numerycznych
-  document
-    .querySelectorAll('#configForm input[type="number"]')
-    .forEach((input) => {
-      input.addEventListener("input", function () {
-        // Walidacja podczas wprowadzania danych
-        if (parseFloat(this.value) < 0 && this.id !== "wireTemperature") {
-          this.classList.add("is-invalid");
-        } else {
-          this.classList.remove("is-invalid");
-        }
-      });
-    });
-
-  // Wczytaj konfigurację przy załadowaniu strony
-  loadConfiguration();
-});

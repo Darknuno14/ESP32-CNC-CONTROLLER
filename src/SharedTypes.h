@@ -11,7 +11,8 @@ enum class CommandType {
     HOME,
     RESET,
     JOG,
-    ZERO
+    ZERO,
+    RELOAD_CONFIG,
 };
 
 struct WebserverCommand {

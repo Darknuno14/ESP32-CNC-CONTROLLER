@@ -43,7 +43,7 @@ namespace CONFIG {
     // Konfiguracja zadań
 
     // Rozmiar stosu zadań FreeRTOS
-    constexpr uint32_t CONTROLTASK_STACK_SIZE { 16384 }; // [bytes]
+    constexpr uint32_t CONTROLTASK_STACK_SIZE { 32768 }; // [bytes]
     constexpr uint32_t CNCTASK_STACK_SIZE { 8192 }; // [bytes]
 
     // Priorytety zadań FreeRTOS

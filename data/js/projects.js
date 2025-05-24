@@ -8,25 +8,46 @@ let selectedFilename = null;
 // Zmienna do przechowywania EventSource
 let eventSource;
 
-// Funkcja aktualizująca listę plików na stronie
+// --- Helper Functions ---
+
+function setSelectedFile(filename) {
+  selectedFilename = filename;
+  document.getElementById("selected-file").textContent = filename
+    ? `Selected file: ${filename}`
+    : "No file selected";
+  localStorage.setItem("selectedFile", filename || "");
+  // Zaznacz radio button jeśli istnieje
+  const radioButton = document.querySelector(`input[value="${filename}"]`);
+  if (radioButton) radioButton.checked = true;
+  // Włącz przycisk potwierdzenia
+  const confirmBtn = document.getElementById("confirmFileBtn");
+  if (confirmBtn) confirmBtn.disabled = !filename;
+}
+
+function handleEventSource() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource("/events");
+  eventSource.onopen = () => console.log("EventSource connection established");
+  eventSource.onerror = () => {
+    console.error("EventSource error");
+    setTimeout(handleEventSource, 5000);
+  };
+}
+
+// --- Main Functions ---
+
 function updateFileList(files) {
   const fileListElement = document.getElementById("file-list");
   const noFilesMessage = document.getElementById("no-files-message");
-
   if (!fileListElement) return;
-
   fileListElement.innerHTML = "";
-
   if (!files || files.length === 0) {
     noFilesMessage.style.display = "block";
     return;
   }
-
   noFilesMessage.style.display = "none";
-
   // Sortuj pliki alfabetycznie
   files.sort();
-
   for (const file of files) {
     const row = document.createElement("tr");
 
@@ -54,78 +75,41 @@ function updateFileList(files) {
     row.appendChild(actionsCell);
     fileListElement.appendChild(row);
 
-    // Dodaj listener do radio buttona
-    const radioButton = row.querySelector(`input[value="${file}"]`);
-    radioButton.addEventListener("change", () => {
-      selectedFilename = file;
-      document.getElementById(
-        "selected-file"
-      ).textContent = `Selected file: ${file}`;
-      localStorage.setItem("selectedFile", file);
-
-      // Włącz przycisk potwierdzenia
-      const confirmBtn = document.getElementById("confirmFileBtn");
-      if (confirmBtn) confirmBtn.disabled = false;
+    // Listener do radio buttona
+    row.querySelector(`input[value="${file}"]`).addEventListener("change", () => {
+      setSelectedFile(file);
     });
   }
 }
 
-// Pobieranie listy plików z serwera
 function fetchFileList() {
   fetch("/api/list-files")
     .then((response) => response.json())
     .then((data) => {
-      console.log("File list received:", data);
-
       if (data && data.success && Array.isArray(data.files)) {
         updateFileList(data.files);
-
         const storedFile = localStorage.getItem("selectedFile");
         if (storedFile && data.files.includes(storedFile)) {
-          selectedFilename = storedFile;
-          document.getElementById(
-            "selected-file"
-          ).textContent = `Selected file: ${storedFile}`;
-          const radioButton = document.querySelector(
-            `input[value="${storedFile}"]`
-          );
-          if (radioButton) radioButton.checked = true;
+          setSelectedFile(storedFile);
         }
       } else {
-        console.error("Unexpected response format:", data);
         updateFileList([]);
-
-        if (data && data.message) {
-          showMessage(data.message, "error");
-        } else {
-          showMessage("Received invalid data format from server", "error");
-        }
+        showMessage(data && data.message ? data.message : "Received invalid data format from server", "error");
       }
     })
-    .catch((error) => {
-      console.error("Error fetching file list:", error);
-      showMessage(
-        "Error fetching file list. Please check SD card connection.",
-        "error"
-      );
+    .catch(() => {
+      showMessage("Error fetching file list. Please check SD card connection.", "error");
     });
 }
 
-// Odświeżanie listy plików
 function refreshFileList() {
-  // Najpierw wywołaj endpoint do odświeżenia na ESP32
   fetch("/api/refresh-files", { method: "POST" })
     .then((response) => {
-      if (!response.ok) {
-        throw new Error("Failed to refresh files on ESP32");
-      }
-      // Następnie pobierz zaktualizowaną listę plików
+      if (!response.ok) throw new Error("Failed to refresh files on ESP32");
       return fetch("/api/list-files");
     })
     .then((response) => {
-      if (!response.ok) {
-        throw new Error("Failed to get file list");
-      }
+      if (!response.ok) throw new Error("Failed to get file list");
       return response.json();
     })
     .then((data) => {
@@ -133,7 +117,6 @@ function refreshFileList() {
         updateFileList(data.files);
         showMessage("File list refreshed successfully");
       } else {
-        console.error("Unexpected response format:", data);
         showMessage("Received invalid data format from server", "warning");
       }
     })
@@ -147,90 +130,51 @@ function confirmSelectedFile() {
     showMessage("Please select a file first.", "warning");
     return;
   }
-  fetch("/api/select-file?file=" + encodeURIComponent(selectedFilename), {
-    method: "POST",
-  })
+  fetch("/api/select-file?file=" + encodeURIComponent(selectedFilename), { method: "POST" })
     .then((res) => res.json())
     .then((data) => {
-      showMessage(
-        data.success ? "Wybrano projekt!" : "Błąd: " + data.message,
-        data.success ? "success" : "error"
-      );
+      showMessage(data.success ? "Wybrano projekt!" : "Błąd: " + data.message, data.success ? "success" : "error");
     })
     .catch(() => showMessage("Błąd połączenia z serwerem", "error"));
 }
 
-// Podgląd zawartości pliku G-code
 function viewGCode(filename) {
   fetch("/api/sd_content?file=" + encodeURIComponent(filename))
     .then((response) => {
-      if (!response.ok) {
-        throw new Error("Failed to fetch file content: " + response.status);
-      }
+      if (!response.ok) throw new Error("Failed to fetch file content: " + response.status);
       return response.text();
     })
     .then((content) => {
       const modal = new bootstrap.Modal(document.getElementById("gCodeModal"));
       document.getElementById("gCodeContent").value = content;
-      document.getElementById(
-        "gCodeModalLabel"
-      ).textContent = `G-Code: ${filename}`;
+      document.getElementById("gCodeModalLabel").textContent = `G-Code: ${filename}`;
       modal.show();
     })
     .catch((error) => {
-      console.error("Error fetching G-Code content:", error);
       showMessage(`Failed to fetch G-Code content: ${error.message}`, "error");
     });
 }
 
-// Podgląd pliku G-code
 function previewFile(filename) {
-  // Ustaw wybrany plik
-  selectedFilename = filename;
-  document.getElementById(
-    "selected-file"
-  ).textContent = `Selected file: ${filename}`;
-  localStorage.setItem("selectedFile", filename);
-
-  // Zaznacz odpowiedni radio button
-  const radioButton = document.querySelector(`input[value="${filename}"]`);
-  if (radioButton) radioButton.checked = true;
-
-  // Wyświetl podgląd
+  setSelectedFile(filename);
   visualizeGCode(filename);
 }
 
-// Wizualizacja pliku G-code
 function visualizeGCode(filename) {
-  if (!filename) {
-    filename = selectedFilename;
-  }
-
+  if (!filename) filename = selectedFilename;
   if (!filename) {
     showMessage("Please select a file first.", "warning");
     return;
   }
-
-  console.log("Visualizing file:", filename);
-
   fetch("/api/sd_content?file=" + encodeURIComponent(filename))
     .then((response) => {
-      if (!response.ok) {
-        console.error(
-          "Failed to fetch file:",
-          response.status,
-          response.statusText
-        );
-        throw new Error("Failed to fetch file: " + response.status);
-      }
+      if (!response.ok) throw new Error("Failed to fetch file: " + response.status);
       return response.text();
     })
     .then((gcode) => {
-      console.log("Received G-code data, length:", gcode.length);
       renderGCodePreview(gcode);
     })
     .catch((error) => {
-      console.error("Error fetching G-Code file:", error);
       showMessage(`Failed to fetch G-Code file: ${error.message}`, "error");
     });
 }
@@ -486,114 +430,71 @@ function visualizeSelectedGCode() {
 
 // Usunięcie pliku
 function deleteFile(filename) {
-  if (!confirm(`Are you sure you want to delete the file "${filename}"?`)) {
-    return;
-  }
-
-  fetch("/api/delete-file?file=" + encodeURIComponent(filename), {
-    method: "POST",
-  })
+  if (!confirm(`Are you sure you want to delete the file "${filename}"?`)) return;
+  fetch("/api/delete-file?file=" + encodeURIComponent(filename), { method: "POST" })
     .then((response) => {
-      if (!response.ok) {
-        throw new Error("Failed to delete file");
-      }
+      if (!response.ok) throw new Error("Failed to delete file");
       return response.json();
     })
     .then((data) => {
       if (data.success) {
         showMessage(`File "${filename}" deleted successfully`);
-
-        // Odśwież listę plików
         refreshFileList();
-
-        // Jeśli usunięto aktualnie wybrany plik, wyczyść wybór
         if (selectedFilename === filename) {
-          selectedFilename = null;
-          document.getElementById("selected-file").textContent =
-            "No file selected";
-          localStorage.removeItem("selectedFile");
-
+          setSelectedFile(null);
           // Wyczyść canvas
           const canvas = document.getElementById("canvas");
           const ctx = canvas.getContext("2d");
           ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
       } else {
-        showMessage(
-          `Failed to delete file: ${data.message || "Unknown error"}`,
-          "error"
-        );
+        showMessage(`Failed to delete file: ${data.message || "Unknown error"}`, "error");
       }
     })
     .catch((error) => {
-      console.error("Error deleting file:", error);
       showMessage(`Error deleting file: ${error.message}`, "error");
     });
 }
 
-// Funkcja uploadowania pliku
 function uploadFile() {
   const fileInput = document.getElementById("fileInput");
   const progressContainer = document.getElementById("progress-container");
   const progressBar = document.getElementById("progress-bar");
   const uploadMessage = document.getElementById("upload-message");
-
   if (fileInput.files.length === 0) {
     uploadMessage.textContent = "Please select a file.";
     uploadMessage.className = "alert alert-warning";
     uploadMessage.style.display = "block";
     return;
   }
-
   const file = fileInput.files[0];
   const formData = new FormData();
   formData.append("file", file);
-
   progressContainer.style.display = "block";
   progressBar.style.width = "0%";
   progressBar.textContent = "0%";
   uploadMessage.style.display = "none";
-
-  fetch("/api/upload-file", {
-    method: "POST",
-    body: formData,
-  })
+  fetch("/api/upload-file", { method: "POST", body: formData })
     .then((response) => {
-      if (!response.ok) {
-        return response.text().then((text) => {
-          throw new Error(text);
-        });
-      }
+      if (!response.ok) return response.text().then((text) => { throw new Error(text); });
       return response.text();
     })
-    .then((data) => {
-      console.log("Upload successful:", data);
+    .then(() => {
       progressBar.style.width = "100%";
       progressBar.textContent = "100%";
       uploadMessage.textContent = "File uploaded successfully!";
       uploadMessage.className = "alert alert-success";
       uploadMessage.style.display = "block";
-
-      // Odśwież listę plików po uploadzie
       refreshFileList();
-
-      // Wyczyść input po udanym uploadzie
       fileInput.value = "";
-
-      // Zamknij modal po krótkim opóźnieniu
       setTimeout(() => {
-        const modal = bootstrap.Modal.getInstance(
-          document.getElementById("uploadModal")
-        );
+        const modal = bootstrap.Modal.getInstance(document.getElementById("uploadModal"));
         if (modal) modal.hide();
-
-        // Ukryj komunikaty i progress bar
         progressContainer.style.display = "none";
         uploadMessage.style.display = "none";
       }, 1500);
     })
     .catch((error) => {
-      console.error("Upload error:", error);
       uploadMessage.textContent = "Upload failed: " + error.message;
       uploadMessage.className = "alert alert-danger";
       uploadMessage.style.display = "block";
@@ -601,43 +502,11 @@ function uploadFile() {
     });
 }
 
-// Inicjalizacja EventSource dla aktualizacji w czasie rzeczywistym
-function initEventSource() {
-  if (eventSource) {
-    eventSource.close();
-  }
+// --- Initialization ---
 
-  eventSource = new EventSource("/events");
-
-  eventSource.addEventListener("machine-status", function (e) {
-    try {
-      const data = JSON.parse(e.data);
-      updateMachineStatus(data);
-    } catch (error) {
-      console.error("Error parsing EventSource data:", error);
-    }
-  });
-
-  eventSource.onopen = function () {
-    console.log("EventSource connection established");
-  };
-
-  eventSource.onerror = function (e) {
-    console.error("EventSource error:", e);
-    // Spróbuj ponownie połączyć po 5 sekundach
-    setTimeout(initEventSource, 5000);
-  };
-}
-
-// Inicjalizacja po załadowaniu strony
 document.addEventListener("DOMContentLoaded", () => {
-  // Pobierz listę plików
   fetchFileList();
-
-  // Inicjalizacja EventSource
-  initEventSource();
-
-  // Obsługa formularza uploadowania
+  handleEventSource();
   document.getElementById("uploadForm").addEventListener("submit", (event) => {
     event.preventDefault();
     uploadFile();
