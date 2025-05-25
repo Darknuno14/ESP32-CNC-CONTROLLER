@@ -47,7 +47,7 @@ namespace CONFIG {
     constexpr uint32_t CNCTASK_STACK_SIZE { 8192 }; // [bytes]
 
     // Priorytety zadań FreeRTOS
-    constexpr uint8_t CONTROLTASK_PRIORITY { 2 }; // The priority at which the task should run
+    constexpr uint8_t CONTROLTASK_PRIORITY { 1 }; // The priority at which the task should run
     constexpr uint8_t CNCTASK_PRIORITY { 1 };
 
     // Pomocnicze do przypisania zadań do rdzeni ESP32
@@ -105,5 +105,9 @@ namespace DEFAULTS {
     // Maszyna robi przejazd od bieżącego punktu o zadany offset
     constexpr float X_OFFSET { 0.0f }; // [mm]
     constexpr float Y_OFFSET { 0.0f }; // [mm]
+
+    // Moc drutu grzejnego i wentylatora
+    constexpr float WIRE_POWER { 0.0f }; // [%]
+    constexpr float FAN_POWER { 0.0f };  // [%]
 
 }

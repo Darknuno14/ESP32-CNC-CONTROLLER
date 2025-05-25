@@ -245,7 +245,7 @@ void WebServerManager::setupConfigRoutes() {
             return;
         }
 
-         // Force reload from SD if available
+        // Force reload from SD if available
         if (this->sdManager->isCardInitialized()) {
             ConfigManagerStatus status = this->configManager->readConfigFromSD();
             if (status != ConfigManagerStatus::OK) {
@@ -256,12 +256,12 @@ void WebServerManager::setupConfigRoutes() {
         }
 
         String jsonConfig = this->configManager->configToJson();
-        
+
         #ifdef DEBUG_SERVER_ROUTES        
         Serial.println("DEBUG: Generated JSON config:");
         Serial.println(jsonConfig);
         #endif
-        
+
         // Add proper headers
         request->send(200, "application/json", jsonConfig);
         });
@@ -315,7 +315,7 @@ void WebServerManager::setupConfigRoutes() {
                 String response = "{\"success\":" + String(status == ConfigManagerStatus::OK ? "true" : "false") +
                     ",\"message\":\"" + message + "\"}";
                 request->send(status == ConfigManagerStatus::OK ? 200 : 400, "application/json", response);
-            });
+                });
         });
 }
 
@@ -359,7 +359,7 @@ void WebServerManager::setupJogRoutes() {
                 this->sendCommand(CommandType::JOG, x, y, speed);
 
                 request->send(200, "application/json", "{\"success\":true}");
-            });
+                });
         }
     );
 
@@ -401,7 +401,7 @@ void WebServerManager::setupJogRoutes() {
                 this->sendCommand(CommandType::JOG, -1, -1, state ? 1.0 : 0.0);
 
                 request->send(200, "application/json", "{\"success\":true}");
-            });
+                });
         }
     );
 
@@ -443,7 +443,7 @@ void WebServerManager::setupJogRoutes() {
                 this->sendCommand(CommandType::JOG, -2, -2, state ? 1.0 : 0.0);
 
                 request->send(200, "application/json", "{\"success\":true}");
-            });
+                });
         }
     );
 
@@ -695,38 +695,35 @@ void WebServerManager::sendCommand(CommandType type, float param1, float param2,
     }
 }
 
-void WebServerManager::broadcastMachineStatus() {
-    MachineState currentState {};
-    if (xQueuePeek(stateQueue, &currentState, 0) == pdTRUE) {
-        // Use stack-allocated buffer instead of dynamic String
-        char jsonBuffer[1024];
+void WebServerManager::broadcastMachineStatus(MachineState currentState) {
 
-        JsonDocument doc;
-        doc["state"] = static_cast<int>(currentState.state);
-        doc["isPaused"] = currentState.isPaused;
-        doc["errorID"] = currentState.errorID;
-        doc["currentX"] = currentState.currentX;
-        doc["currentY"] = currentState.currentY;
-        doc["relativeMode"] = currentState.relativeMode;
-        doc["hotWireOn"] = currentState.hotWireOn;
-        doc["fanOn"] = currentState.fanOn;
-        doc["hotWirePower"] = currentState.hotWirePower;
-        doc["fanPower"] = currentState.fanPower;
-        doc["currentProject"] = String(currentState.currentProject);
-        doc["jobProgress"] = currentState.jobProgress;
-        doc["currentLine"] = currentState.currentLine;
-        doc["totalLines"] = currentState.totalLines;
-        doc["jobStartTime"] = currentState.jobStartTime;
-        doc["jobRunTime"] = currentState.jobRunTime;
-        doc["estopOn"] = currentState.estopOn;
-        doc["limitXOn"] = currentState.limitXOn;
-        doc["limitYOn"] = currentState.limitYOn;
+    char jsonBuffer[1024];
 
-        // Serialize directly to fixed buffer
-        size_t len = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
-        if (len < sizeof(jsonBuffer)) {
-            sendEvent("machine-status", jsonBuffer);
-        }
+    JsonDocument doc;
+    doc["state"] = static_cast<int>(currentState.state);
+    doc["isPaused"] = currentState.isPaused;
+    doc["errorID"] = currentState.errorID;
+    doc["currentX"] = currentState.currentX;
+    doc["currentY"] = currentState.currentY;
+    doc["relativeMode"] = currentState.relativeMode;
+    doc["hotWireOn"] = currentState.hotWireOn;
+    doc["fanOn"] = currentState.fanOn;
+    doc["hotWirePower"] = currentState.hotWirePower;
+    doc["fanPower"] = currentState.fanPower;
+    doc["currentProject"] = String(currentState.currentProject);
+    doc["jobProgress"] = currentState.jobProgress;
+    doc["currentLine"] = currentState.currentLine;
+    doc["totalLines"] = currentState.totalLines;
+    doc["jobStartTime"] = currentState.jobStartTime;
+    doc["jobRunTime"] = currentState.jobRunTime;
+    doc["estopOn"] = currentState.estopOn;
+    doc["limitXOn"] = currentState.limitXOn;
+    doc["limitYOn"] = currentState.limitYOn;
+
+    // Serialize directly to fixed buffer
+    size_t len = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
+    if (len < sizeof(jsonBuffer)) {
+        sendEvent("machine-status", jsonBuffer);
     }
 }
 
@@ -740,13 +737,13 @@ bool WebServerManager::isBusy() {
     return this->busy;
 }
 
-bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_t* data, size_t len, 
-                           size_t index, size_t total, size_t bufferSize,
-                           std::function<void(const String&)> processor) {
+bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_t* data, size_t len,
+    size_t index, size_t total, size_t bufferSize,
+    std::function<void(const String&)> processor) {
     static char* jsonBuffer = nullptr;
     static size_t bufferPos = 0;
     static size_t currentBufferSize = 0;
-    
+
     if (index == 0) {
         if (jsonBuffer) free(jsonBuffer);
         jsonBuffer = (char*)malloc(bufferSize);
@@ -754,22 +751,22 @@ bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_
             request->send(500, "application/json", "{\"success\":false,\"message\":\"Memory allocation failed\"}");
             return false;
         }
-        
+
         bufferPos = 0;
         currentBufferSize = bufferSize;
         memset(jsonBuffer, 0, bufferSize);
     }
-    
+
     if (bufferPos + len >= currentBufferSize) {
         if (jsonBuffer) free(jsonBuffer);
         jsonBuffer = nullptr;
         request->send(413, "application/json", "{\"success\":false,\"message\":\"Request too large\"}");
         return false;
     }
-    
+
     memcpy(jsonBuffer + bufferPos, data, len);
     bufferPos += len;
-    
+
     if (index + len == total) {
         jsonBuffer[bufferPos] = '\0';
         processor(String(jsonBuffer));
@@ -777,7 +774,7 @@ bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_
         jsonBuffer = nullptr;
         return true;
     }
-    
+
     return true;
 }
 

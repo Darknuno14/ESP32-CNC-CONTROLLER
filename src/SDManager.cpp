@@ -11,7 +11,7 @@ SDCardManager::~SDCardManager() {
 }
 
 SDManagerStatus SDCardManager::init() {
-    if (!SD.begin(PINCONFIG::SD_CS_PIN)) {
+    if (!SD.begin(PINCONFIG::SD_CS_PIN, SPI, 25000000)) {
         return SDManagerStatus::INIT_FAILED;
     }
 

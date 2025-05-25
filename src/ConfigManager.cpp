@@ -151,6 +151,8 @@ ConfigManagerStatus ConfigManager::loadDefaultConfig() {
         config.deactivateESTOP = DEFAULTS::DEACTIVATE_ESTOP;
         config.deactivateLimitSwitches = DEFAULTS::DEACTIVATE_LIMIT_SWITCHES;
         config.limitSwitchType = DEFAULTS::LIMIT_SWITCH_TYPE;
+        config.hotWirePower = DEFAULTS::WIRE_POWER;
+        config.fanPower = DEFAULTS::FAN_POWER;
 
         xSemaphoreGive(configMutex);
         return ConfigManagerStatus::OK;
@@ -221,6 +223,8 @@ String ConfigManager::configToJson() {
         doc["deactivateESTOP"] = config.deactivateESTOP;
         doc["deactivateLimitSwitches"] = config.deactivateLimitSwitches;
         doc["limitSwitchType"] = config.limitSwitchType;
+        doc["hotWirePower"] = config.hotWirePower;
+        doc["fanPower"] = config.fanPower;
 
         xSemaphoreGive(configMutex);
     }
@@ -272,6 +276,8 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
         if (doc["deactivateESTOP"].is<bool>()) config.deactivateESTOP = doc["deactivateESTOP"].as<bool>();
         if (doc["deactivateLimitSwitches"].is<bool>()) config.deactivateLimitSwitches = doc["deactivateLimitSwitches"].as<bool>();
         if (doc["limitSwitchType"].is<uint8_t>()) config.limitSwitchType = doc["limitSwitchType"].as<uint8_t>();
+        if (doc["hotWirePower"].is<float>()) config.hotWirePower = doc["hotWirePower"].as<float>();
+        if (doc["fanPower"].is<float>()) config.fanPower = doc["fanPower"].as<float>();
 
         xSemaphoreGive(configMutex);
 
@@ -315,6 +321,8 @@ ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName,
         else if (paramName == "deactivateESTOP") config.deactivateESTOP = static_cast<bool>(value);
         else if (paramName == "deactivateLimitSwitches") config.deactivateLimitSwitches = static_cast<bool>(value);
         else if (paramName == "limitSwitchType") config.limitSwitchType = static_cast<uint8_t>(value);
+        else if (paramName == "hotWirePower") config.hotWirePower = static_cast<float>(value);
+        else if (paramName == "fanPower") config.fanPower = static_cast<float>(value);
 
         xSemaphoreGive(configMutex);
 

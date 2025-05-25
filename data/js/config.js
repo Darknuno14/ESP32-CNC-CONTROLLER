@@ -80,12 +80,16 @@ function loadConfiguration() {
       const deactivateESTOP = document.getElementById("deactivateESTOP");
       const deactivateLimitSwitches = document.getElementById("deactivateLimitSwitches");
       const limitSwitchType = document.getElementById("limitSwitchType");
+      const hotWirePower = document.getElementById("hotWirePower");
+      const fanPower = document.getElementById("fanPower");
       
       if (useGCodeFeedRate) useGCodeFeedRate.checked = config.useGCodeFeedRate || false;
       if (delayAfterStartup) delayAfterStartup.value = config.delayAfterStartup || 0;
       if (deactivateESTOP) deactivateESTOP.checked = config.deactivateESTOP || false;
       if (deactivateLimitSwitches) deactivateLimitSwitches.checked = config.deactivateLimitSwitches || false;
       if (limitSwitchType) limitSwitchType.value = config.limitSwitchType || 0;
+      if (hotWirePower) hotWirePower.value = config.hotWirePower || 0;
+      if (fanPower) fanPower.value = config.fanPower || 0;
 
       showMessage("Configuration loaded successfully");
       document.getElementById("saveBtn").disabled = false;
@@ -136,6 +140,8 @@ function saveConfiguration(event) {
     deactivateESTOP: formData.get("deactivateESTOP") === "on",
     deactivateLimitSwitches: formData.get("deactivateLimitSwitches") === "on",
     limitSwitchType: parseInt(formData.get("limitSwitchType")) || 0,
+    hotWirePower: parseFloat(formData.get("hotWirePower")) || 0,
+    fanPower: parseFloat(formData.get("fanPower")) || 0,
   };
 
   console.log("Saving config:", config); // Debug log
