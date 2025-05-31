@@ -25,6 +25,10 @@ struct MachineConfig {
     MotorConfig X {};
     MotorConfig Y {};
 
+    // Parametry drutu
+    float hotWirePower {};          // Moc drutu grzejnego [0-100%]
+    float fanPower {};              // Moc wentylatora [0-100%]
+
     // Pozostałe parametry
     bool useGCodeFeedRate {};      // Czy używać prędkości podanej w G-code
     int delayAfterStartup {};      // Opóźnienie po uruchomieniu (ms)

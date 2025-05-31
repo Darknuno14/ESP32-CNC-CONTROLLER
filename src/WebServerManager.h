@@ -88,7 +88,7 @@ class WebServerManager {
 
     void sendEvent(const char* event, const char* data);
 
-    void broadcastMachineStatus();
+    void broadcastMachineStatus(MachineState currentState);
 
     bool isBusy();
 };

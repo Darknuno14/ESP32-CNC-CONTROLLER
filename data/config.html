@@ -341,6 +341,52 @@
             </div>
           </div>
         </div>
+        <!-- POWER SETTINGS -->
+        <div class="card mb-4">
+          <div class="card-header">
+            <h5>Power Configuration</h5>
+          </div>
+          <div class="card-body">
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label for="hotWirePower" class="form-label"
+                  >Hot Wire Power (%)</label
+                >
+                <input
+                  type="number"
+                  class="form-control"
+                  id="hotWirePower"
+                  name="hotWirePower"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  required
+                />
+                <div class="form-text">
+                  Power level for hot wire (0-100%)
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label for="fanPower" class="form-label"
+                  >Fan Power (%)</label
+                >
+                <input
+                  type="number"
+                  class="form-control"
+                  id="fanPower"
+                  name="fanPower"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  required
+                />
+                <div class="form-text">
+                  Power level for cooling fan (0-100%)
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
         <!-- SAFETY -->
         <div class="card mb-4">
           <div class="card-header">

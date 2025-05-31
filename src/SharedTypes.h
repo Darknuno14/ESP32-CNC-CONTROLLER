@@ -97,6 +97,7 @@ struct GCodeProcessingState {
     // Dane o ruchu
     float targetX { 0.0f };
     float targetY { 0.0f };
+    float currentFeedRate { 0.0f };
     bool movementInProgress { false };
     
     // Dane o podgrzewaniu
