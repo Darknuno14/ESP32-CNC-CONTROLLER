@@ -3,54 +3,19 @@
  */
 
 // Ujednolicona obsługa EventSource z możliwością przekazania callbacka
-function handleEventSource(onMachineStatus, onPerformanceUpdate) {
+function handleEventSource(onMachineStatus) {
   if (window.eventSource) {
     window.eventSource.close();
   }
   window.eventSource = new EventSource("/events");
-
-  // Track last machine state for delta processing
-  window.lastMachineState = window.lastMachineState || {};
 
   if (typeof onMachineStatus === "function") {
     window.eventSource.addEventListener("machine-status", function (e) {
       try {
         const data = JSON.parse(e.data);
         onMachineStatus(data);
-        window.lastMachineState = data;
       } catch (error) {
         console.error("Error parsing EventSource data:", error);
-      }
-    });
-
-    // Handle delta updates for optimized performance
-    window.eventSource.addEventListener("machine-status-delta", function (e) {
-      try {
-        const deltaData = JSON.parse(e.data);
-        
-        // Apply delta to last known state
-        if (window.lastMachineState) {
-          const updatedState = applyMachineStateDelta(window.lastMachineState, deltaData);
-          onMachineStatus(updatedState);
-          window.lastMachineState = updatedState;
-        } else {
-          // If no previous state, request full update
-          requestFullMachineStatus();
-        }
-      } catch (error) {
-        console.error("Error parsing delta EventSource data:", error);
-      }
-    });
-  }
-
-  // Handle performance metrics updates
-  if (typeof onPerformanceUpdate === "function") {
-    window.eventSource.addEventListener("performance-metrics", function (e) {
-      try {
-        const performanceData = JSON.parse(e.data);
-        onPerformanceUpdate(performanceData);
-      } catch (error) {
-        console.error("Error parsing performance data:", error);
       }
     });
   }
@@ -66,123 +31,9 @@ function handleEventSource(onMachineStatus, onPerformanceUpdate) {
   window.eventSource.onerror = function () {
     console.error("EventSource error");
     setTimeout(() => {
-      handleEventSource(onMachineStatus, onPerformanceUpdate);
+      handleEventSource(onMachineStatus);
     }, 5000);
   };
-}
-
-// Apply delta updates to machine state
-function applyMachineStateDelta(currentState, delta) {
-  const updatedState = { ...currentState };
-  
-  if (delta.hasPositionUpdate) {
-    updatedState.currentX = (updatedState.currentX || 0) + delta.deltaX;
-    updatedState.currentY = (updatedState.currentY || 0) + delta.deltaY;
-  }
-  
-  if (delta.hasStateUpdate) {
-    updatedState.state = delta.newState;
-    updatedState.isPaused = delta.newPauseState;
-    updatedState.isHomed = delta.newHomedState;
-  }
-  
-  if (delta.hasIOUpdate) {
-    updatedState.estopOn = delta.newEstopState;
-    updatedState.limitXOn = delta.newLimitXState;
-    updatedState.limitYOn = delta.newLimitYState;
-    updatedState.hotWireOn = delta.newHotWireState;
-    updatedState.fanOn = delta.newFanState;
-    updatedState.hotWirePower = delta.newHotWirePower;
-    updatedState.fanPower = delta.newFanPower;
-  }
-  
-  if (delta.hasProgressUpdate) {
-    updatedState.currentLine = delta.newCurrentLine;
-    updatedState.jobProgress = delta.newProgress;
-  }
-  
-  if (delta.hasErrorUpdate) {
-    updatedState.errorID = delta.newErrorID;
-  }
-  
-  return updatedState;
-}
-
-// Request full machine status (fallback)
-function requestFullMachineStatus() {
-  fetch('/api/position')
-    .then(response => response.json())
-    .then(data => {
-      if (window.lastMachineState && typeof window.onMachineStatusCallback === 'function') {
-        window.lastMachineState.currentX = data.x;
-        window.lastMachineState.currentY = data.y;
-        window.onMachineStatusCallback(window.lastMachineState);
-      }
-    })
-    .catch(error => console.error('Error fetching machine status:', error));
-}
-
-// Performance monitoring functions
-function fetchPerformanceMetrics() {
-  return fetch('/api/performance')
-    .then(response => response.json())
-    .catch(error => {
-      console.error('Error fetching performance metrics:', error);
-      return null;
-    });
-}
-
-function resetPerformanceMetrics() {
-  return fetch('/api/performance/reset', { method: 'POST' })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        showMessage('Performance metrics reset successfully');
-      } else {
-        showMessage('Failed to reset performance metrics', 'error');
-      }
-      return data;
-    })
-    .catch(error => {
-      console.error('Error resetting performance metrics:', error);
-      showMessage('Error resetting performance metrics', 'error');
-    });
-}
-
-// Emergency stop function
-function emergencyStop() {
-  fetch('/api/emergency-stop', { method: 'POST' })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        showMessage('Emergency stop activated', 'warning');
-      } else {
-        showMessage('Failed to activate emergency stop', 'error');
-      }
-    })
-    .catch(error => {
-      console.error('Error activating emergency stop:', error);
-      showMessage('Error activating emergency stop', 'error');
-    });
-}
-
-// System reset function
-function systemReset() {
-  if (confirm('Are you sure you want to reset the system? This will stop all operations.')) {
-    fetch('/api/reset', { method: 'POST' })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          showMessage('System reset activated', 'info');
-        } else {
-          showMessage('Failed to reset system', 'error');
-        }
-      })
-      .catch(error => {
-        console.error('Error resetting system:', error);
-        showMessage('Error resetting system', 'error');
-      });
-  }
 }
 
 // Funkcja do wyświetlania komunikatów

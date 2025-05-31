@@ -19,16 +19,11 @@ struct MachineConfig {
         float workFeedRate {};      // G1 Prędkość [steps/s]
         float workAcceleration {};  // G1 Przyspieszenie [steps/s^2]
         float offset {};            // Przejazd po nagrzaniu drutu [mm]
-        float maxTravel {};         // Maksymalny zasięg osi [mm]
     };
 
     // Osie 
     MotorConfig X {};
     MotorConfig Y {};
-
-    // Parametry drutu
-    float hotWirePower {};          // Moc drutu grzejnego [0-100%]
-    float fanPower {};              // Moc wentylatora [0-100%]
 
     // Pozostałe parametry
     bool useGCodeFeedRate {};      // Czy używać prędkości podanej w G-code

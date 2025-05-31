@@ -2,16 +2,13 @@
 #include <string>
 
 // ============================================================================
-// Enable debugging - WYŁĄCZONE dla wydajności produkcyjnej:
-// #define DEBUG_CONTROL_TASK
-// #define DEBUG_CNC_TASK
-// #define DEBUG_SERVER_ROUTES
-// #define DEBUG_SD
-// #define DEBUG_WIFI
-// #define DEBUG_CONFIG_MANAGER
-
-// Włącz tylko krytyczne debugowanie:
-#define DEBUG_SYSTEM_CRITICAL
+// Enable debugging:
+#define DEBUG_CONTROL_TASK
+#define DEBUG_CNC_TASK
+#define DEBUG_SERVER_ROUTES
+#define DEBUG_SD
+#define DEBUG_WIFI
+#define DEBUG_CONFIG_MANAGER
 
 
 namespace PINCONFIG {
@@ -43,34 +40,24 @@ namespace PINCONFIG {
 }
 namespace CONFIG {
     // ============================================================================
-    // Konfiguracja zadań    // Rozmiar stosu zadań FreeRTOS - zoptymalizowane
-    constexpr uint32_t CONTROLTASK_STACK_SIZE { 16384 }; // [bytes] - zmniejszone z 32768
-    constexpr uint32_t CNCTASK_STACK_SIZE { 12288 }; // [bytes] - zwiększone z 8192 dla G-code processing
+    // Konfiguracja zadań
 
-    // Priorytety zadań FreeRTOS - zoptymalizowane dla time-critical operations
-    constexpr uint8_t CONTROLTASK_PRIORITY { 2 }; // Zwiększone dla responsywności interfejsu
-    constexpr uint8_t CNCTASK_PRIORITY { 3 }; // Najwyższy priorytet dla kontroli ruchu
+    // Rozmiar stosu zadań FreeRTOS
+    constexpr uint32_t CONTROLTASK_STACK_SIZE { 32768 }; // [bytes]
+    constexpr uint32_t CNCTASK_STACK_SIZE { 8192 }; // [bytes]
+
+    // Priorytety zadań FreeRTOS
+    constexpr uint8_t CONTROLTASK_PRIORITY { 2 }; // The priority at which the task should run
+    constexpr uint8_t CNCTASK_PRIORITY { 1 };
 
     // Pomocnicze do przypisania zadań do rdzeni ESP32
     constexpr BaseType_t CORE_0 { 0 };
     constexpr BaseType_t CORE_1 { 1 };
 
-    // ============================================================================    // Maksymalny czas oczekiwania na połączenie z WiFi
+    // ============================================================================
+
+    // Maksymalny czas oczekiwania na połączenie z WiFi
     constexpr long MAX_CONNECTION_TIME { 10000 }; // [ms] 
-
-    // Interwały czasowe dla optymalizacji wydajności [ms]
-    constexpr uint32_t CNC_TASK_DELAY { 1 };        // Podstawowe opóźnienie CNC task
-    constexpr uint32_t CONTROL_TASK_DELAY { 10 };   // Podstawowe opóźnienie Control task
-    constexpr uint32_t COMMAND_PROCESS_INTERVAL { 50 };   // Sprawdzanie komend co 50ms
-    constexpr uint32_t STATUS_UPDATE_INTERVAL { 100 };    // Aktualizacja statusu co 100ms
-    constexpr uint32_t IO_UPDATE_INTERVAL { 5 };          // Aktualizacja I/O co 5ms
-    constexpr uint32_t WEBSOCKET_BROADCAST_INTERVAL { 200 }; // WebSocket broadcast co 200ms
-    constexpr uint32_t SYSTEM_MONITOR_INTERVAL { 5000 };  // Monitor systemu co 5s
-
-    // Rozmiary kolejek FreeRTOS - zoptymalizowane
-    constexpr uint8_t STATE_QUEUE_SIZE { 1 };       // Tylko najnowszy stan
-    constexpr uint8_t COMMAND_QUEUE_SIZE { 5 };     // Bufor komend
-    constexpr uint8_t GCODE_BUFFER_SIZE { 3 };      // Bufor linii G-code
 
     // Ścieżki plików na karcie SD
     constexpr const char* PROJECTS_DIR { "/Projects/" };
@@ -112,17 +99,11 @@ namespace DEFAULTS {
 
     // Typ styku krańcówki
     // 0 = NO (normal open), 1 = NC (normal close)
-    constexpr uint8_t LIMIT_SWITCH_TYPE { 0 };    // Przesunięcie punktu początkowego na początku cyklu po nagrzewaniu drutu
+    constexpr uint8_t LIMIT_SWITCH_TYPE { 0 };
+
+    // Przesunięcie punktu początkowego na początku cyklu po nagrzewaniu drutu
     // Maszyna robi przejazd od bieżącego punktu o zadany offset
     constexpr float X_OFFSET { 0.0f }; // [mm]
     constexpr float Y_OFFSET { 0.0f }; // [mm]
-
-    // Maksymalny zasięg ruchu osi
-    constexpr float X_MAX_TRAVEL { 300.0f }; // [mm]
-    constexpr float Y_MAX_TRAVEL { 200.0f }; // [mm]
-
-    // Moc drutu grzejnego i wentylatora
-    constexpr float WIRE_POWER { 0.0f }; // [%]
-    constexpr float FAN_POWER { 0.0f };  // [%]
 
 }

@@ -9,9 +9,6 @@
 #include "SDManager.h"
 #include "ConfigManager.h"
 
-// Forward declarations for external functions
-MachineStateDelta calculateStateDelta(const MachineState& current, const MachineState& previous);
-
 enum class WebServerStatus {
     OK,
     ALREADY_INITIALIZED,
@@ -28,9 +25,10 @@ class WebServerManager {
     AsyncEventSource* events { nullptr };
 
     SDCardManager* sdManager { nullptr };
-    ConfigManager* configManager { nullptr };    QueueHandle_t commandQueue; // Zasada Inversion of Control
+    ConfigManager* configManager { nullptr };
+
+    QueueHandle_t commandQueue; // Zasada Inversion of Control
     QueueHandle_t stateQueue;
-    QueueHandle_t priorityCommandQueue; // Priority-based command queue
 
     // Track initialization status
     bool serverInitialized { false };
@@ -42,14 +40,15 @@ class WebServerManager {
     bool serverStarted { false };
 
     // Flag to indicate if the server is busy processing requests
-    volatile bool busy { false };    // Sets up all server routes and handlers
+    volatile bool busy { false };
+
+    // Sets up all server routes and handlers
     void setupRoutes();
     void setupCommonRoutes();
     void setupIndexRoutes();
     void setupConfigRoutes();
     void setupJogRoutes();
     void setupProjectsRoutes();
-    void setupPerformanceRoutes();
 
     static constexpr size_t JSON_BUFFER_SIZE = 1024;
     static constexpr size_t SMALL_JSON_BUFFER_SIZE = 256;
@@ -58,8 +57,10 @@ class WebServerManager {
                            size_t index, size_t total, size_t bufferSize,
                            std::function<void(const String&)> processor);
 
-    public:    // Construct a new Web Server Manager Pointer to initialized SD card manager
-    WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue, QueueHandle_t extStateQueue, QueueHandle_t extPriorityCommandQueue);
+    public:
+
+    // Construct a new Web Server Manager Pointer to initialized SD card manager
+    WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue, QueueHandle_t extStateQueue);
 
     // Destroy and clean up allocated resources of the Web Server Manager
     ~WebServerManager();
@@ -80,19 +81,14 @@ class WebServerManager {
 
     // Check if the events have been initialized
     // true = events have been initialized
-    bool isEventsInitialized();    // Send a command to the CNC task
-    void sendCommand(CommandType type, float param1 = 0.0f, float param2 = 0.0f, float param3 = 0.0f);
-    
-    // Send a priority command to the CNC task
-    void sendPriorityCommand(CommandType type, CommandPriority priority, float param1 = 0.0f, float param2 = 0.0f, float param3 = 0.0f);
+    bool isEventsInitialized();
 
-    void sendEvent(const char* event, const char* data);    void broadcastMachineStatus(MachineState currentState);
-    
-    // Enhanced EventSource broadcasting with adaptive frequency and delta updates
-    void broadcastMachineStatusAdaptive(const MachineState& currentState, const MachineState& previousState, 
-                                       const EventSourceConfig& config);
-    void broadcastDeltaUpdate(const MachineStateDelta& delta);
-    bool shouldUseDeltaUpdate(const MachineState& current, const MachineState& previous, float threshold = 5.0f);
+    // Send a command to the CNC task
+    void sendCommand(CommandType type, float param1 = 0.0f, float param2 = 0.0f, float param3 = 0.0f);
+
+    void sendEvent(const char* event, const char* data);
+
+    void broadcastMachineStatus();
 
     bool isBusy();
 };

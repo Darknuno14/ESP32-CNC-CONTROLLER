@@ -91,56 +91,8 @@ function updateMachineStatus(data) {
       statusText.textContent = "Nieznany";
   }
 
-  // Aktualizacja statusu bezpieczeństwa
-  updateSafetyStatus(data);
-
   // Aktywacja/dezaktywacja przycisków zgodnie ze stanem maszyny
   updateButtonStates(data.state);
-}
-
-/**
- * Aktualizacja statusu bezpieczeństwa
- */
-function updateSafetyStatus(data) {
-  // E-STOP status
-  const estopIndicator = document.getElementById("estop-status");
-  const estopText = document.getElementById("estop-text");
-  
-  if (data.eStopTriggered !== undefined) {
-    if (data.eStopTriggered) {
-      estopIndicator.className = "status-indicator status-inactive me-2";
-      estopText.textContent = "TRIGGERED";
-      estopText.className = "fw-semibold text-danger";
-    } else {
-      estopIndicator.className = "status-indicator status-active me-2";
-      estopText.textContent = "OK";
-      estopText.className = "fw-semibold text-success";
-    }
-  } else {
-    estopIndicator.className = "status-indicator status-unknown me-2";
-    estopText.textContent = "UNKNOWN";
-    estopText.className = "fw-semibold text-muted";
-  }
-
-  // Limit switches status
-  const limitsIndicator = document.getElementById("limits-status");
-  const limitsText = document.getElementById("limits-text");
-  
-  if (data.limitSwitchTriggered !== undefined) {
-    if (data.limitSwitchTriggered) {
-      limitsIndicator.className = "status-indicator status-inactive me-2";
-      limitsText.textContent = "TRIGGERED";
-      limitsText.className = "fw-semibold text-danger";
-    } else {
-      limitsIndicator.className = "status-indicator status-active me-2";
-      limitsText.textContent = "OK";
-      limitsText.className = "fw-semibold text-success";
-    }
-  } else {
-    limitsIndicator.className = "status-indicator status-unknown me-2";
-    limitsText.textContent = "UNKNOWN";
-    limitsText.className = "fw-semibold text-muted";
-  }
 }
 
 /**
@@ -533,12 +485,6 @@ function updatePositionDisplay() {
  * Inicjalizacja po załadowaniu strony
  */
 document.addEventListener("DOMContentLoaded", function () {
-  // Initialize tooltips
-  const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-  tooltipTriggerList.map(function (tooltipTriggerEl) {
-    return new bootstrap.Tooltip(tooltipTriggerEl);
-  });
-
   // Inicjalizacja EventSource
   initEventSource();
 
