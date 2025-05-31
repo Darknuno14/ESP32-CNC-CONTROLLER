@@ -18,6 +18,21 @@
   background-color: #ffc107;
 }
 
+/* Safety status indicators */
+.status-active {
+  background-color: #28a745;
+  box-shadow: 0 0 10px rgba(40, 167, 69, 0.5);
+}
+
+.status-inactive {
+  background-color: #dc3545;
+  box-shadow: 0 0 10px rgba(220, 53, 69, 0.5);
+}
+
+.status-unknown {
+  background-color: #6c757d;
+}
+
 /* Style dla kontrolera JOG */
 .jog-container {
   display: flex;

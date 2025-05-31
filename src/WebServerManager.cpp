@@ -4,11 +4,12 @@
 #include <ESPAsyncWebServer.h>
 #include <SD.h>
 #include <LittleFS.h>
+#include <ArduinoJson.h>
 #include "WebServerManager.h"
 #include "CONFIGURATION.H"
 
-WebServerManager::WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue, QueueHandle_t extStateQueue)
-    : sdManager(sdManager), configManager(configManager), commandQueue(extCommandQueue), stateQueue(extStateQueue) {
+WebServerManager::WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue, QueueHandle_t extStateQueue, QueueHandle_t extPriorityCommandQueue)
+    : sdManager(sdManager), configManager(configManager), commandQueue(extCommandQueue), stateQueue(extStateQueue), priorityCommandQueue(extPriorityCommandQueue) {
 }
 
 WebServerManager::~WebServerManager() {
@@ -87,6 +88,7 @@ void WebServerManager::setupRoutes() {
     setupConfigRoutes();
     setupJogRoutes();
     setupProjectsRoutes();
+    setupPerformanceRoutes();
 
     if (LittleFS.exists("/css/styles.css")) {
         server->serveStatic("/css/", LittleFS, "/css/")
@@ -208,26 +210,46 @@ void WebServerManager::setupIndexRoutes() {
         this->sendCommand(CommandType::START);
 
         request->send(200, "application/json", "{\"success\":true}");
-        });
-
-    // Przycisk PAUSE
+        });    // Przycisk PAUSE
     server->on("/api/pause", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: Komenda PAUSE");
         #endif
 
-        this->sendCommand(CommandType::PAUSE);
+        // Use high priority for immediate pause
+        this->sendPriorityCommand(CommandType::PAUSE, CommandPriority::HIGH_PRIORITY);
 
         request->send(200, "application/json", "{\"success\":true}");
-        });
-
-    // Przycisk STOP
+        });// Przycisk STOP
     server->on("/api/stop", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: Komenda STOP");
         #endif
 
-        this->sendCommand(CommandType::STOP);
+        // Use priority command for immediate stop
+        this->sendPriorityCommand(CommandType::STOP, CommandPriority::HIGH_PRIORITY);
+
+        request->send(200, "application/json", "{\"success\":true}");
+        });    // Emergency Stop - highest priority
+    server->on("/api/emergency-stop", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: EMERGENCY STOP");
+        #endif
+
+        // Use emergency priority for emergency stop
+        this->sendPriorityCommand(CommandType::EMERGENCY_STOP, CommandPriority::EMERGENCY);
+
+        request->send(200, "application/json", "{\"success\":true}");
+        });
+
+    // System Reset - emergency priority
+    server->on("/api/reset", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: System RESET");
+        #endif
+
+        // Use emergency priority for system reset
+        this->sendPriorityCommand(CommandType::RESET, CommandPriority::EMERGENCY);
 
         request->send(200, "application/json", "{\"success\":true}");
         });
@@ -245,7 +267,7 @@ void WebServerManager::setupConfigRoutes() {
             return;
         }
 
-         // Force reload from SD if available
+        // Force reload from SD if available
         if (this->sdManager->isCardInitialized()) {
             ConfigManagerStatus status = this->configManager->readConfigFromSD();
             if (status != ConfigManagerStatus::OK) {
@@ -256,12 +278,12 @@ void WebServerManager::setupConfigRoutes() {
         }
 
         String jsonConfig = this->configManager->configToJson();
-        
+
         #ifdef DEBUG_SERVER_ROUTES        
         Serial.println("DEBUG: Generated JSON config:");
         Serial.println(jsonConfig);
         #endif
-        
+
         // Add proper headers
         request->send(200, "application/json", jsonConfig);
         });
@@ -315,7 +337,7 @@ void WebServerManager::setupConfigRoutes() {
                 String response = "{\"success\":" + String(status == ConfigManagerStatus::OK ? "true" : "false") +
                     ",\"message\":\"" + message + "\"}";
                 request->send(status == ConfigManagerStatus::OK ? 200 : 400, "application/json", response);
-            });
+                });
         });
 }
 
@@ -347,19 +369,33 @@ void WebServerManager::setupJogRoutes() {
                     return;
                 }
 
-                float x = doc["x"].as<float>();
-                float y = doc["y"].as<float>();
+                float x = doc["x"].as<float>();                float y = doc["y"].as<float>();
                 float speed = doc["speed"].as<float>();
 
                 #ifdef DEBUG_SERVER_ROUTES
                 Serial.printf("DEBUG SERVER STATUS: JOG command: X=%.2f, Y=%.2f, Speed=%.2f\n", x, y, speed);
                 #endif
 
-                // Wyślij komendę JOG przez kolejkę
-                this->sendCommand(CommandType::JOG, x, y, speed);
+                // Use specific directional JOG commands for better control
+                if (x > 0 && y == 0) {
+                    // X+ movement
+                    this->sendCommand(CommandType::JOG_X_PLUS, x, speed);
+                } else if (x < 0 && y == 0) {
+                    // X- movement
+                    this->sendCommand(CommandType::JOG_X_MINUS, -x, speed);
+                } else if (y > 0 && x == 0) {
+                    // Y+ movement
+                    this->sendCommand(CommandType::JOG_Y_PLUS, y, speed);
+                } else if (y < 0 && x == 0) {
+                    // Y- movement
+                    this->sendCommand(CommandType::JOG_Y_MINUS, -y, speed);
+                } else {
+                    // Diagonal or complex movement - use generic JOG
+                    this->sendCommand(CommandType::JOG, x, y, speed);
+                }
 
                 request->send(200, "application/json", "{\"success\":true}");
-            });
+                });
         }
     );
 
@@ -388,20 +424,17 @@ void WebServerManager::setupJogRoutes() {
                 if (!doc["state"].is<bool>()) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing state parameter\"}");
                     return;
-                }
-
-                bool state = doc["state"].as<bool>();
+                }                bool state = doc["state"].as<bool>();
 
                 #ifdef DEBUG_SERVER_ROUTES
                 Serial.printf("DEBUG SERVER STATUS: Wire control: %s\n", state ? "ON" : "OFF");
                 #endif
 
-                // TODO: Implementacja sterowania drutem grzejnym
-                // tymczasowo jako CommandType::JOG z parametrami -1, -1, state ? 1.0 : 0.0
-                this->sendCommand(CommandType::JOG, -1, -1, state ? 1.0 : 0.0);
+                // Use proper SET_WIRE_POWER command
+                this->sendCommand(CommandType::SET_WIRE_POWER, 0.0f, 0.0f, state ? 100.0f : 0.0f);
 
                 request->send(200, "application/json", "{\"success\":true}");
-            });
+                });
         }
     );
 
@@ -430,34 +463,170 @@ void WebServerManager::setupJogRoutes() {
                 if (!doc["state"].is<bool>()) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing state parameter\"}");
                     return;
-                }
-
-                bool state = doc["state"].as<bool>();
+                }                bool state = doc["state"].as<bool>();
 
                 #ifdef DEBUG_SERVER_ROUTES
                 Serial.printf("DEBUG SERVER STATUS: Fan control: %s\n", state ? "ON" : "OFF");
                 #endif
 
-                // TODO: Implementacja sterowania wentylatorem
-                // tymczasowo jako CommandType::JOG z parametrami -2, -2, state ? 1.0 : 0.0
-                this->sendCommand(CommandType::JOG, -2, -2, state ? 1.0 : 0.0);
+                // Use proper SET_FAN_POWER command
+                this->sendCommand(CommandType::SET_FAN_POWER, 0.0f, 0.0f, state ? 100.0f : 0.0f);
 
                 request->send(200, "application/json", "{\"success\":true}");
-            });
+                });
         }
-    );
-
-    // Endpoint do pobierania aktualnej pozycji
+    );    // Endpoint do pobierania aktualnej pozycji
     server->on("/api/position", HTTP_GET, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: Position requested");
         #endif
 
-        // TODO: należałoby pobierać aktualną pozycję z systemu
-        // Tymczasowo zwracamy zerowe współrzędne
-        String response = "{\"x\":0.0,\"y\":0.0}";
+        // Pobierz aktualną pozycję z kolejki stanu
+        MachineState currentState;
+        String response;
+        
+        if (xQueuePeek(this->stateQueue, &currentState, 0) == pdTRUE) {
+            // Użyj rzeczywistych danych pozycji z kolejki stanu
+            response = "{\"x\":" + String(currentState.currentX, 3) + ",\"y\":" + String(currentState.currentY, 3) + "}";
+            
+            #ifdef DEBUG_SERVER_ROUTES
+            Serial.printf("DEBUG SERVER POSITION: X=%.3f, Y=%.3f\n", currentState.currentX, currentState.currentY);
+            #endif
+        } else {
+            // Fallback do zerowych współrzędnych jeśli kolejka jest pusta
+            response = "{\"x\":0.0,\"y\":0.0}";
+            
+            #ifdef DEBUG_SERVER_ROUTES
+            Serial.println("DEBUG SERVER WARNING: Failed to read position from state queue");
+            #endif
+        }
 
         request->send(200, "application/json", response);
+        });    // Endpoint do bazowania maszyny
+    server->on("/api/home", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: Home command");
+        #endif
+
+        // Use high priority for homing operation
+        this->sendPriorityCommand(CommandType::HOME, CommandPriority::HIGH_PRIORITY);
+
+        request->send(200, "application/json", "{\"success\":true}");
+        });// Endpoint do zerowania pozycji
+    server->on("/api/zero", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: Zero command");
+        #endif
+
+        this->sendCommand(CommandType::ZERO);
+
+        request->send(200, "application/json", "{\"success\":true}");
+        });
+}
+
+void WebServerManager::setupPerformanceRoutes() {
+    // Performance metrics API endpoint
+    server->on("/api/performance", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: Performance metrics requested");
+        #endif
+
+        // Get current performance metrics from main.cpp
+        extern PerformanceMetrics performanceMetrics;
+        
+        // Create JSON response with performance data
+        JsonDocument doc;
+        
+        // Task performance
+        doc["task"]["cncCycles"] = performanceMetrics.cncTaskCycles;
+        doc["task"]["controlCycles"] = performanceMetrics.controlTaskCycles;
+        doc["task"]["maxCncTime"] = performanceMetrics.maxCncTaskTime;
+        doc["task"]["maxControlTime"] = performanceMetrics.maxControlTaskTime;
+        
+        // Queue performance
+        doc["queue"]["stateDrops"] = performanceMetrics.stateQueueDrops;
+        doc["queue"]["commandDrops"] = performanceMetrics.commandQueueDrops;
+        doc["queue"]["maxStateWait"] = performanceMetrics.maxStateQueueWait;
+        doc["queue"]["maxCommandWait"] = performanceMetrics.maxCommandQueueWait;
+        
+        // SD Card performance
+        doc["sd"]["operations"] = performanceMetrics.sdOperations;
+        doc["sd"]["timeouts"] = performanceMetrics.sdTimeouts;
+        doc["sd"]["maxWaitTime"] = performanceMetrics.maxSdWaitTime;
+        
+        // EventSource performance
+        doc["eventSource"]["broadcastCount"] = performanceMetrics.broadcastCount;
+        doc["eventSource"]["deltaUpdates"] = performanceMetrics.deltaUpdates;
+        doc["eventSource"]["fullUpdates"] = performanceMetrics.fullUpdates;
+        doc["eventSource"]["maxBroadcastTime"] = performanceMetrics.maxBroadcastTime;
+        
+        // Stepper performance
+        doc["stepper"]["cycles"] = performanceMetrics.stepperCycles;
+        doc["stepper"]["timeouts"] = performanceMetrics.stepperTimeouts;
+        doc["stepper"]["maxTime"] = performanceMetrics.maxStepperTime;
+        
+        // Memory metrics
+        doc["memory"]["freeHeap"] = performanceMetrics.freeHeap;
+        doc["memory"]["minFreeHeap"] = performanceMetrics.minFreeHeap;
+        doc["memory"]["maxHeapUsed"] = performanceMetrics.maxHeapUsed;
+        doc["memory"]["totalHeapSize"] = performanceMetrics.totalHeapSize;
+        doc["memory"]["alertTriggered"] = performanceMetrics.memoryAlertTriggered;
+        doc["memory"]["lastAlert"] = performanceMetrics.lastMemoryAlert;
+        
+        // Stack metrics
+        doc["stack"]["cncHighWaterMark"] = performanceMetrics.stackHighWaterMarkCNC;
+        doc["stack"]["controlHighWaterMark"] = performanceMetrics.stackHighWaterMarkControl;
+        doc["stack"]["minFree"] = performanceMetrics.minStackFree;
+        doc["stack"]["overflowDetected"] = performanceMetrics.stackOverflowDetected;
+        doc["stack"]["alertTriggered"] = performanceMetrics.stackAlertTriggered;
+        doc["stack"]["lastAlert"] = performanceMetrics.lastStackAlert;
+        
+        // System status
+        doc["system"]["uptime"] = millis();
+        doc["system"]["timestamp"] = millis();
+        
+        String jsonResponse;
+        serializeJson(doc, jsonResponse);
+        
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER: Performance metrics sent");
+        #endif
+        
+        request->send(200, "application/json", jsonResponse);
+        });
+
+    // Performance metrics reset endpoint
+    server->on("/api/performance/reset", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: Performance metrics reset requested");
+        #endif
+
+        // Reset performance metrics (extern reference)
+        extern PerformanceMetrics performanceMetrics;
+        
+        // Reset counters but preserve min/max values that shouldn't be reset
+        performanceMetrics.cncTaskCycles = 0;
+        performanceMetrics.controlTaskCycles = 0;
+        performanceMetrics.stateQueueDrops = 0;
+        performanceMetrics.commandQueueDrops = 0;
+        performanceMetrics.sdOperations = 0;
+        performanceMetrics.sdTimeouts = 0;
+        performanceMetrics.broadcastCount = 0;
+        performanceMetrics.deltaUpdates = 0;
+        performanceMetrics.fullUpdates = 0;
+        performanceMetrics.stepperCycles = 0;
+        performanceMetrics.stepperTimeouts = 0;
+        
+        // Reset max timing values
+        performanceMetrics.maxCncTaskTime = 0;
+        performanceMetrics.maxControlTaskTime = 0;
+        performanceMetrics.maxStateQueueWait = 0;
+        performanceMetrics.maxCommandQueueWait = 0;
+        performanceMetrics.maxSdWaitTime = 0;
+        performanceMetrics.maxBroadcastTime = 0;
+        performanceMetrics.maxStepperTime = 0;
+        
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Performance metrics reset\"}");
         });
 }
 
@@ -695,38 +864,103 @@ void WebServerManager::sendCommand(CommandType type, float param1, float param2,
     }
 }
 
-void WebServerManager::broadcastMachineStatus() {
-    MachineState currentState {};
-    if (xQueuePeek(stateQueue, &currentState, 0) == pdTRUE) {
-        // Use stack-allocated buffer instead of dynamic String
-        char jsonBuffer[1024];
-
-        JsonDocument doc;
-        doc["state"] = static_cast<int>(currentState.state);
-        doc["isPaused"] = currentState.isPaused;
-        doc["errorID"] = currentState.errorID;
-        doc["currentX"] = currentState.currentX;
-        doc["currentY"] = currentState.currentY;
-        doc["relativeMode"] = currentState.relativeMode;
-        doc["hotWireOn"] = currentState.hotWireOn;
-        doc["fanOn"] = currentState.fanOn;
-        doc["hotWirePower"] = currentState.hotWirePower;
-        doc["fanPower"] = currentState.fanPower;
-        doc["currentProject"] = String(currentState.currentProject);
-        doc["jobProgress"] = currentState.jobProgress;
-        doc["currentLine"] = currentState.currentLine;
-        doc["totalLines"] = currentState.totalLines;
-        doc["jobStartTime"] = currentState.jobStartTime;
-        doc["jobRunTime"] = currentState.jobRunTime;
-        doc["estopOn"] = currentState.estopOn;
-        doc["limitXOn"] = currentState.limitXOn;
-        doc["limitYOn"] = currentState.limitYOn;
-
-        // Serialize directly to fixed buffer
-        size_t len = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
-        if (len < sizeof(jsonBuffer)) {
-            sendEvent("machine-status", jsonBuffer);
+void WebServerManager::sendPriorityCommand(CommandType type, CommandPriority priority, float param1, float param2, float param3) {
+    if (priorityCommandQueue) {
+        PriorityCommand priorityCmd {};
+        priorityCmd.command.type = type;
+        priorityCmd.command.param1 = param1;
+        priorityCmd.command.param2 = param2;
+        priorityCmd.command.param3 = param3;
+        priorityCmd.priority = priority;
+        priorityCmd.timestamp = xTaskGetTickCount();        // Determine timeout based on priority level
+        uint32_t timeoutMs = 100; // Default timeout
+        switch (priority) {
+            case CommandPriority::EMERGENCY:
+                timeoutMs = 50;   // Emergency commands get shorter timeout for faster processing
+                break;
+            case CommandPriority::HIGH_PRIORITY:
+                timeoutMs = 100;  // High priority commands
+                break;
+            default:
+                timeoutMs = 200;  // Normal/Low priority commands
+                break;
         }
+
+        if (xQueueSend(priorityCommandQueue, &priorityCmd, pdMS_TO_TICKS(timeoutMs)) == pdTRUE) {
+            #ifdef DEBUG_SERVER_ROUTES
+            Serial.printf("DEBUG SERVER: Sent priority command type %d (priority %d) with params: %.2f, %.2f, %.2f\n",
+                static_cast<int>(type), static_cast<int>(priority), param1, param2, param3);
+            #endif
+        } else {
+            #ifdef DEBUG_SERVER_ROUTES
+            Serial.printf("DEBUG SERVER WARNING: Failed to send priority command type %d (priority queue full or timeout)\n", static_cast<int>(type));
+            #endif
+              // Error recovery: Try to clear space in queue for emergency commands
+            if (priority == CommandPriority::EMERGENCY) {
+                // For emergency commands, try to make space by removing lower priority items
+                PriorityCommand discardedCmd;
+                int attempts = 0;
+                while (attempts < 3 && xQueueReceive(priorityCommandQueue, &discardedCmd, 0) == pdTRUE) {
+                    // Only discard lower priority commands
+                    if (discardedCmd.priority > priority) {
+                        attempts++;
+                        #ifdef DEBUG_SERVER_ROUTES
+                        Serial.printf("DEBUG SERVER: Discarded lower priority command to make space for critical command\n");
+                        #endif
+                    } else {
+                        // Put it back if it's equal or higher priority
+                        xQueueSendToFront(priorityCommandQueue, &discardedCmd, 0);
+                        break;
+                    }
+                }
+                  // Try to send the emergency command again
+                if (xQueueSend(priorityCommandQueue, &priorityCmd, 0) == pdTRUE) {
+                    #ifdef DEBUG_SERVER_ROUTES
+                    Serial.printf("DEBUG SERVER: Successfully sent emergency command after queue cleanup\n");
+                    #endif
+                } else {
+                    #ifdef DEBUG_SERVER_ROUTES
+                    Serial.printf("DEBUG SERVER ERROR: Failed to send emergency command even after queue cleanup\n");
+                    #endif
+                }
+            }
+        }
+    } else {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER ERROR: Priority command queue not initialized");
+        #endif
+    }
+}
+
+void WebServerManager::broadcastMachineStatus(MachineState currentState) {
+
+    char jsonBuffer[1024];
+
+    JsonDocument doc;
+    doc["state"] = static_cast<int>(currentState.state);
+    doc["isPaused"] = currentState.isPaused;
+    doc["errorID"] = currentState.errorID;
+    doc["currentX"] = currentState.currentX;
+    doc["currentY"] = currentState.currentY;
+    doc["relativeMode"] = currentState.relativeMode;
+    doc["hotWireOn"] = currentState.hotWireOn;
+    doc["fanOn"] = currentState.fanOn;
+    doc["hotWirePower"] = currentState.hotWirePower;
+    doc["fanPower"] = currentState.fanPower;
+    doc["currentProject"] = String(currentState.currentProject);
+    doc["jobProgress"] = currentState.jobProgress;
+    doc["currentLine"] = currentState.currentLine;
+    doc["totalLines"] = currentState.totalLines;
+    doc["jobStartTime"] = currentState.jobStartTime;
+    doc["jobRunTime"] = currentState.jobRunTime;
+    doc["estopOn"] = currentState.estopOn;
+    doc["limitXOn"] = currentState.limitXOn;
+    doc["limitYOn"] = currentState.limitYOn;
+
+    // Serialize directly to fixed buffer
+    size_t len = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
+    if (len < sizeof(jsonBuffer)) {
+        sendEvent("machine-status", jsonBuffer);
     }
 }
 
@@ -740,13 +974,13 @@ bool WebServerManager::isBusy() {
     return this->busy;
 }
 
-bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_t* data, size_t len, 
-                           size_t index, size_t total, size_t bufferSize,
-                           std::function<void(const String&)> processor) {
+bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_t* data, size_t len,
+    size_t index, size_t total, size_t bufferSize,
+    std::function<void(const String&)> processor) {
     static char* jsonBuffer = nullptr;
     static size_t bufferPos = 0;
     static size_t currentBufferSize = 0;
-    
+
     if (index == 0) {
         if (jsonBuffer) free(jsonBuffer);
         jsonBuffer = (char*)malloc(bufferSize);
@@ -754,22 +988,22 @@ bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_
             request->send(500, "application/json", "{\"success\":false,\"message\":\"Memory allocation failed\"}");
             return false;
         }
-        
+
         bufferPos = 0;
         currentBufferSize = bufferSize;
         memset(jsonBuffer, 0, bufferSize);
     }
-    
+
     if (bufferPos + len >= currentBufferSize) {
         if (jsonBuffer) free(jsonBuffer);
         jsonBuffer = nullptr;
         request->send(413, "application/json", "{\"success\":false,\"message\":\"Request too large\"}");
         return false;
     }
-    
+
     memcpy(jsonBuffer + bufferPos, data, len);
     bufferPos += len;
-    
+
     if (index + len == total) {
         jsonBuffer[bufferPos] = '\0';
         processor(String(jsonBuffer));
@@ -777,8 +1011,91 @@ bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_
         jsonBuffer = nullptr;
         return true;
     }
-    
+
     return true;
+}
+
+// Enhanced EventSource broadcasting with adaptive frequency and delta updates
+void WebServerManager::broadcastMachineStatusAdaptive(const MachineState& currentState, const MachineState& previousState, 
+                                                     const EventSourceConfig& config) {
+    uint32_t startTime = micros();
+    
+    // Check if delta update is sufficient
+    if (shouldUseDeltaUpdate(currentState, previousState)) {
+        // Calculate and send delta update
+        MachineStateDelta delta = calculateStateDelta(currentState, previousState);
+        if (delta.hasPositionUpdate || delta.hasStateUpdate || delta.hasIOUpdate || 
+            delta.hasProgressUpdate || delta.hasErrorUpdate) {
+            broadcastDeltaUpdate(delta);
+        }
+    } else {
+        // Send full update
+        broadcastMachineStatus(currentState);
+    }
+    
+    uint32_t elapsedTime = micros() - startTime;
+    
+    // Update performance metrics (extern variables from main.cpp)
+    extern PerformanceMetrics performanceMetrics;
+    performanceMetrics.broadcastCount++;
+    performanceMetrics.maxBroadcastTime = max(performanceMetrics.maxBroadcastTime, elapsedTime);
+}
+
+void WebServerManager::broadcastDeltaUpdate(const MachineStateDelta& delta) {
+    char jsonBuffer[512]; // Smaller buffer for delta updates
+    JsonDocument doc;
+    
+    doc["type"] = "delta";
+    
+    if (delta.hasPositionUpdate) {
+        doc["position"]["deltaX"] = delta.deltaX;
+        doc["position"]["deltaY"] = delta.deltaY;
+    }
+    
+    if (delta.hasStateUpdate) {
+        doc["state"]["value"] = static_cast<int>(delta.newState);
+        doc["state"]["paused"] = delta.newPauseState;
+        doc["state"]["homed"] = delta.newHomedState;
+    }
+    
+    if (delta.hasIOUpdate) {
+        doc["io"]["estop"] = delta.newEstopState;
+        doc["io"]["limitX"] = delta.newLimitXState;
+        doc["io"]["limitY"] = delta.newLimitYState;
+        doc["io"]["hotWire"] = delta.newHotWireState;
+        doc["io"]["fan"] = delta.newFanState;
+        doc["io"]["hotWirePower"] = delta.newHotWirePower;
+        doc["io"]["fanPower"] = delta.newFanPower;
+    }
+    
+    if (delta.hasProgressUpdate) {
+        doc["progress"]["currentLine"] = delta.newCurrentLine;
+        doc["progress"]["percent"] = delta.newProgress;
+    }
+    
+    if (delta.hasErrorUpdate) {
+        doc["error"]["id"] = delta.newErrorID;
+    }
+    
+    size_t len = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
+    if (len < sizeof(jsonBuffer)) {
+        sendEvent("machine-delta", jsonBuffer);
+        
+        extern PerformanceMetrics performanceMetrics;
+        performanceMetrics.deltaUpdates++;
+    }
+}
+
+bool WebServerManager::shouldUseDeltaUpdate(const MachineState& current, const MachineState& previous, float threshold) {
+    // Calculate change percentage for key metrics
+    float positionChange = sqrt(pow(current.currentX - previous.currentX, 2) + 
+                               pow(current.currentY - previous.currentY, 2));
+    float progressChange = abs(current.jobProgress - previous.jobProgress);
+    
+    // Use delta if changes are minor
+    return (positionChange < 1.0f && progressChange < threshold && 
+            current.state == previous.state && 
+            current.isPaused == previous.isPaused);
 }
 
 

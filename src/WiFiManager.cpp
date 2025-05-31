@@ -19,7 +19,7 @@ WiFiManagerStatus WiFiManager::connect(const char* ssid, const char* password, u
     }
     else {
         Serial.println("Connection failed");
-        return WiFiManagerStatus::OK;
+        return WiFiManagerStatus::WIFI_NO_CONNECTION;
     }
 }
 

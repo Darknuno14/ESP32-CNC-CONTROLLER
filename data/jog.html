@@ -89,10 +89,12 @@
                   type="button"
                   class="btn btn-warning w-100 mt-2"
                   id="zeroBtn"
+                  title="Set current position as zero reference point" data-bs-toggle="tooltip"
                 >
                   <i class="bi bi-geo"></i> Zeruj Pozycję
                 </button>
-                <button type="button" class="btn btn-info w-100" id="homeBtn">
+                <button type="button" class="btn btn-info w-100" id="homeBtn"
+                        title="Move machine to home position" data-bs-toggle="tooltip">
                   <i class="bi bi-house"></i> Bazuj Maszynę
                 </button>
               </div>
@@ -131,6 +133,19 @@
                   >Status Maszyny:
                   <span id="machine-status-text">Bezczynny</span></small
                 >
+              </div>
+
+              <!-- Safety Status Indicators -->
+              <div class="alert alert-info">
+                <h6 class="mb-2">Status Bezpieczeństwa</h6>
+                <div class="d-flex align-items-center mb-2">
+                  <div id="estop-status" class="status-indicator status-active me-2" title="E-STOP Status"></div>
+                  <span class="me-3">E-STOP: <span id="estop-text" class="fw-semibold text-success">OK</span></span>
+                </div>
+                <div class="d-flex align-items-center">
+                  <div id="limits-status" class="status-indicator status-active me-2" title="Limit Switches Status"></div>
+                  <span>Krańcówki: <span id="limits-text" class="fw-semibold text-success">OK</span></span>
+                </div>
               </div>
             </div>
           </div>
@@ -225,6 +240,7 @@
                     class="btn btn-primary jog-button"
                     data-x="-1"
                     data-y="1"
+                    title="Move diagonally up-left" data-bs-toggle="tooltip"
                   >
                     <i class="bi bi-arrow-up-left"></i>
                   </button>
@@ -232,6 +248,7 @@
                     class="btn btn-primary jog-button"
                     data-x="0"
                     data-y="1"
+                    title="Move up (Y+)" data-bs-toggle="tooltip"
                   >
                     <i class="bi bi-arrow-up"></i>
                   </button>
@@ -239,6 +256,7 @@
                     class="btn btn-primary jog-button"
                     data-x="1"
                     data-y="1"
+                    title="Move diagonally up-right" data-bs-toggle="tooltip"
                   >
                     <i class="bi bi-arrow-up-right"></i>
                   </button>
@@ -248,16 +266,19 @@
                     class="btn btn-primary jog-button"
                     data-x="-1"
                     data-y="0"
+                    title="Move left (X-)" data-bs-toggle="tooltip"
                   >
                     <i class="bi bi-arrow-left"></i>
                   </button>
-                  <button class="btn btn-secondary jog-button jog-center">
+                  <button class="btn btn-secondary jog-button jog-center"
+                          title="Center position reference" data-bs-toggle="tooltip">
                     <i class="bi bi-plus"></i>
                   </button>
                   <button
                     class="btn btn-primary jog-button"
                     data-x="1"
                     data-y="0"
+                    title="Move right (X+)" data-bs-toggle="tooltip"
                   >
                     <i class="bi bi-arrow-right"></i>
                   </button>
@@ -267,6 +288,7 @@
                     class="btn btn-primary jog-button"
                     data-x="-1"
                     data-y="-1"
+                    title="Move diagonally down-left" data-bs-toggle="tooltip"
                   >
                     <i class="bi bi-arrow-down-left"></i>
                   </button>
@@ -274,6 +296,7 @@
                     class="btn btn-primary jog-button"
                     data-x="0"
                     data-y="-1"
+                    title="Move down (Y-)" data-bs-toggle="tooltip"
                   >
                     <i class="bi bi-arrow-down"></i>
                   </button>
@@ -281,6 +304,7 @@
                     class="btn btn-primary jog-button"
                     data-x="1"
                     data-y="-1"
+                    title="Move diagonally down-right" data-bs-toggle="tooltip"
                   >
                     <i class="bi bi-arrow-down-right"></i>
                   </button>

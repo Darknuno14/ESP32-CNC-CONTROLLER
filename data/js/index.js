@@ -5,27 +5,86 @@
 // --- Ścieżka ruchu maszyny ---
 let pathPoints = [];
 let lastX = null, lastY = null;
-let eventSource;
+let performanceMetrics = null;
 
 // --- Helper Functions ---
 
-function handleEventSource() {
-  if (eventSource) eventSource.close();
-  eventSource = new EventSource('/events');
-  eventSource.addEventListener('machine-status', function(e) {
-    try {
-      const data = JSON.parse(e.data);
-      updateUIWithMachineState(data);
-      updatePathCanvas(data.currentX, data.currentY);
-    } catch (error) {
-      console.error("Error parsing EventSource data:", error);
+// Machine status callback for EventSource
+function onMachineStatusUpdate(data) {
+  updateUIWithMachineState(data);
+  updatePathCanvas(data.currentX, data.currentY);
+}
+
+// Performance metrics callback for EventSource
+function onPerformanceUpdate(data) {
+  performanceMetrics = data;
+  updatePerformanceDisplay(data);
+}
+
+// Update performance display if performance section exists
+function updatePerformanceDisplay(metrics) {
+  const perfSection = document.getElementById("performance-section");
+  if (!perfSection) return;
+
+  // Update memory usage
+  const memoryElement = document.getElementById("memory-usage");
+  const memoryProgressElement = document.getElementById("memory-progress");
+  if (memoryElement && metrics.memory) {
+    const totalHeap = metrics.memory.totalHeapSize || 0;
+    const freeHeap = metrics.memory.freeHeap || 0;
+    const memoryUsagePercent = totalHeap > 0 ? ((totalHeap - freeHeap) / totalHeap * 100).toFixed(1) : "0.0";
+    
+    memoryElement.textContent = `${memoryUsagePercent}% (${(freeHeap / 1024).toFixed(1)}KB free)`;
+    
+    if (memoryProgressElement) {
+      memoryProgressElement.style.width = `${memoryUsagePercent}%`;
+      memoryProgressElement.setAttribute('aria-valuenow', memoryUsagePercent);
+      memoryProgressElement.className = 'progress-bar'; // Reset classes
+      if (parseFloat(memoryUsagePercent) > 80) {
+        memoryProgressElement.classList.add('bg-danger');
+      } else if (parseFloat(memoryUsagePercent) > 60) {
+        memoryProgressElement.classList.add('bg-warning');
+      } else {
+        memoryProgressElement.classList.add('bg-success'); // Use bg-success for normal
+      }
     }
-  });
-  eventSource.onopen = () => console.log("EventSource connection established");
-  eventSource.onerror = () => {
-    console.error("EventSource error");
-    setTimeout(handleEventSource, 5000);
-  };
+    
+    if (metrics.memory.alertTriggered) {
+      memoryElement.classList.add('text-warning');
+    } else {
+      memoryElement.classList.remove('text-warning');
+    }
+  }
+
+  // Update task performance
+  const taskPerfElement = document.getElementById("task-performance");
+  if (taskPerfElement && metrics.task) {
+    taskPerfElement.textContent = `Max Times (μs) - CNC: ${metrics.task.maxCncTime || 0}, Ctrl: ${metrics.task.maxControlTime || 0}`;
+  }
+
+  // Update queue stats
+  const queueStatsElement = document.getElementById("queue-stats");
+  if (queueStatsElement && metrics.queue) {
+    const totalDrops = (metrics.queue.stateDrops || 0) + (metrics.queue.commandDrops || 0);
+    const maxWait = Math.max(metrics.queue.maxStateQueueWait || 0, metrics.queue.maxCommandQueueWait || 0);
+    queueStatsElement.textContent = `Total Drops: ${totalDrops} | Max Wait: ${maxWait}ms`;
+    
+    if (totalDrops > 0) {
+      queueStatsElement.classList.add('text-warning');
+    } else {
+      queueStatsElement.classList.remove('text-warning');
+    }
+  }
+
+  // Update EventSource stats
+  const eventSourceElement = document.getElementById("eventsource-stats");
+  if (eventSourceElement && metrics.eventSource) {
+    const fullUpdates = metrics.eventSource.fullUpdates || 0;
+    const deltaUpdates = metrics.eventSource.deltaUpdates || 0;
+    const deltaRatio = fullUpdates > 0 ? (deltaUpdates / fullUpdates).toFixed(1) : 'N/A';
+    const maxBroadcastTime = metrics.eventSource.maxBroadcastTime || 0;
+    eventSourceElement.textContent = `Delta Ratio: ${deltaRatio}:1 | Max Bcast Time: ${maxBroadcastTime}μs`;
+  }
 }
 
 // --- Main Functions ---
@@ -220,7 +279,15 @@ function showMessage(msg, type = "success") {
 // --- Initialization ---
 
 document.addEventListener("DOMContentLoaded", () => {
-  handleEventSource();
+  // Initialize tooltips
+  const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+  tooltipTriggerList.map(function (tooltipTriggerEl) {
+    return new bootstrap.Tooltip(tooltipTriggerEl);
+  });
+
+  // Set up global callback and initialize EventSource with performance monitoring
+  window.onMachineStatusCallback = onMachineStatusUpdate;
+  handleEventSource(onMachineStatusUpdate, onPerformanceUpdate);
 
   document.getElementById("resetPathBtn")?.addEventListener("click", () => {
     pathPoints = [];
@@ -232,4 +299,26 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("startBtn")?.addEventListener("click", startProcessing);
   document.getElementById("pauseBtn")?.addEventListener("click", pauseProcessing);
   document.getElementById("stopBtn")?.addEventListener("click", stopProcessing);
+
+  // Add emergency stop button if it exists
+  document.getElementById("emergencyStopBtn")?.addEventListener("click", emergencyStop);
+  
+  // Add system reset button if it exists
+  document.getElementById("systemResetBtn")?.addEventListener("click", systemReset);
+
+  // Add performance metrics button if it exists
+  document.getElementById("showPerformanceBtn")?.addEventListener("click", () => {
+    if (performanceMetrics) {
+      console.log("Current performance metrics:", performanceMetrics);
+    } else {
+      fetchPerformanceMetrics().then(metrics => {
+        if (metrics) {
+          console.log("Fetched performance metrics:", metrics);
+        }
+      });
+    }
+  });
+
+  // Add performance reset button if it exists
+  document.getElementById("resetPerformanceBtn")?.addEventListener("click", resetPerformanceMetrics);
 });
