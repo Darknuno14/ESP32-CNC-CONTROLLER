@@ -368,8 +368,8 @@ void WebServerManager::setupJogRoutes() {
                 float speedValue = (speedMode == "rapid") ? 1.0f : 0.0f;
 
                 #ifdef DEBUG_SERVER_ROUTES
-                Serial.printf("DEBUG SERVER STATUS: JOG command: X=%.2f, Y=%.2f, SpeedMode=%s (%.1f)\n", 
-                              x, y, speedMode.c_str(), speedValue);
+                Serial.printf("DEBUG SERVER STATUS: JOG command: X=%.2f, Y=%.2f, SpeedMode=%s (%.1f)\n",
+                    x, y, speedMode.c_str(), speedValue);
                 #endif
 
                 // Wyślij komendę JOG przez kolejkę
@@ -723,7 +723,32 @@ void WebServerManager::sendCommand(CommandType type, float param1, float param2,
 
 void WebServerManager::broadcastMachineStatus(MachineState currentState) {
 
+    if (!events || !eventsInitialized) return;
+
+    // Sprawdź czy są połączeni klienci
+    if (events->count() == 0) {
+        return;
+    }
+
     char jsonBuffer[1024];
+
+    static MachineState lastSentState {};
+    static bool firstSend = true;
+
+    // Porównaj kluczowe pola stanu
+    bool stateChanged = firstSend ||
+        lastSentState.state != currentState.state ||
+        lastSentState.isPaused != currentState.isPaused ||
+        abs(lastSentState.currentX - currentState.currentX) > 0.01f ||
+        abs(lastSentState.currentY - currentState.currentY) > 0.01f ||
+        lastSentState.hotWireOn != currentState.hotWireOn ||
+        lastSentState.fanOn != currentState.fanOn ||
+        lastSentState.jobProgress != currentState.jobProgress ||
+        lastSentState.currentLine != currentState.currentLine;
+
+    if (!stateChanged) {
+        return; // Nie wysyłaj jeśli stan się nie zmienił
+    }
 
     JsonDocument doc;
     doc["state"] = static_cast<int>(currentState.state);
@@ -751,6 +776,8 @@ void WebServerManager::broadcastMachineStatus(MachineState currentState) {
     if (len < sizeof(jsonBuffer)) {
         sendEvent("machine-status", jsonBuffer);
     }
+    lastSentState = currentState;
+    firstSend = false;
 }
 
 void WebServerManager::sendEvent(const char* event, const char* data) {

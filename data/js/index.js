@@ -5,39 +5,64 @@
 // --- Ścieżka ruchu maszyny ---
 let pathPoints = [];
 let lastX = null, lastY = null;
-let eventSource;
 
 // --- Helper Functions ---
 
-function handleEventSource() {
-  if (eventSource) eventSource.close();
-  eventSource = new EventSource('/events');
-  eventSource.addEventListener('machine-status', function(e) {
-    try {
-      const data = JSON.parse(e.data);
-      updateUIWithMachineState(data);
-      updatePathCanvas(data.currentX, data.currentY);
-    } catch (error) {
-      console.error("Error parsing EventSource data:", error);
+// Funkcja do aktualizacji statusu maszyny w UI
+function updateMachineStatusUI(machineState) {
+  const statusElement = document.getElementById("machine-status");
+  const statusTextElement = document.getElementById("machine-status-text");
+  
+  if (statusElement && statusTextElement) {
+    // Usuń poprzednie klasy statusu
+    statusElement.classList.remove("status-on", "status-off", "status-warning");
+    
+    // Mapowanie stanów maszyny
+    switch (machineState) {
+      case 0: // IDLE
+        statusElement.classList.add("status-off");
+        statusTextElement.textContent = "Bezczynny";
+        break;
+      case 1: // RUNNING
+        statusElement.classList.add("status-on");
+        statusTextElement.textContent = "W pracy";
+        break;
+      case 2: // JOG
+        statusElement.classList.add("status-warning");
+        statusTextElement.textContent = "Sterowanie ręczne";
+        break;
+      case 3: // HOMING
+        statusElement.classList.add("status-warning");
+        statusTextElement.textContent = "Powrót do pozycji domowej";
+        break;
+      case 4: // STOPPED
+        statusElement.classList.add("status-off");
+        statusTextElement.textContent = "Zatrzymany";
+        break;
+      case 5: // ERROR
+        statusElement.classList.add("status-off");
+        statusTextElement.textContent = "Błąd";
+        break;
+      default:
+        statusElement.classList.add("status-off");
+        statusTextElement.textContent = "Nieznany";
     }
-  });
-  eventSource.onopen = () => console.log("EventSource connection established");
-  eventSource.onerror = () => {
-    console.error("EventSource error");
-    setTimeout(handleEventSource, 5000);
-  };
+  }
 }
 
 // --- Main Functions ---
 
 // Aktualizacja interfejsu na podstawie danych o stanie maszyny
 function updateUIWithMachineState(data) {
+  // Aktualizuj status maszyny
+  updateMachineStatusUI(data.state);
+
   // Nazwa pliku
   const selectedFileElement = document.getElementById("selected-file");
   if (selectedFileElement)
     selectedFileElement.textContent = data.currentProject && data.currentProject.length > 0
       ? data.currentProject
-      : "No file selected";
+      : "Nie wybrano pliku";
 
   // Aktualna linia
   const currentLineElement = document.getElementById("current-line");
@@ -102,7 +127,7 @@ function updateButtonStates(machineState, isPaused) {
   else if (machineState === 4 || machineState === 5) {
     if (startBtn) startBtn.disabled = true;
     if (pauseBtn) pauseBtn.disabled = true;
-    if (stopBtn) stopBtn.disabled = true;
+    if (stopBtn) stopBtn.disabled = false;
   }
 }
 
@@ -220,7 +245,11 @@ function showMessage(msg, type = "success") {
 // --- Initialization ---
 
 document.addEventListener("DOMContentLoaded", () => {
-  handleEventSource();
+  // Użyj funkcji handleEventSource z common.js z callbackiem
+  handleEventSource((data) => {
+    updateUIWithMachineState(data);
+    updatePathCanvas(data.currentX, data.currentY);
+  });
 
   document.getElementById("resetPathBtn")?.addEventListener("click", () => {
     pathPoints = [];

@@ -188,7 +188,7 @@ void taskCNC(void* parameter) {
     // Silniki krokowe
     AccelStepper stepperX(AccelStepper::DRIVER, PINCONFIG::STEP_X_PIN, PINCONFIG::DIR_X_PIN);
     AccelStepper stepperY(AccelStepper::DRIVER, PINCONFIG::STEP_Y_PIN, PINCONFIG::DIR_Y_PIN);
-    
+
     // Dodaj steppery do globalnego MultiStepper
     multiStepper.addStepper(stepperX);
     multiStepper.addStepper(stepperY);
@@ -228,13 +228,13 @@ void taskCNC(void* parameter) {
     stepperTicker.attach(timerIntervalSeconds, onStepperTimer);
 
     #ifdef DEBUG_CNC_TASK
-    Serial.printf("DEBUG CNC: Timer stepperów uruchomiony z częstotliwością %lu µs (%.6f s)\n", 
-                  CONFIG::STEPPER_TIMER_FREQUENCY_US, timerIntervalSeconds);
+    Serial.printf("DEBUG CNC: Timer stepperów uruchomiony z częstotliwością %lu µs (%.6f s)\n",
+        CONFIG::STEPPER_TIMER_FREQUENCY_US, timerIntervalSeconds);
     #endif
 
     while (true) {
         TickType_t currentTime { xTaskGetTickCount() };
-        
+
         // Uwaga: multiStepper.run() jest teraz wywoływane w przerwaniu timera!
         // W stanach STOPPED/ERROR musimy wyczyścić pozycje docelowe stepperów
         if (cncState.state == CNCState::STOPPED || cncState.state == CNCState::ERROR) {
@@ -561,7 +561,7 @@ void taskControl(void* parameter) {
     TickType_t lastStatusUpdateTime { 0 };
     TickType_t lastDebugTime { 0 };
     TickType_t lastWiFiCheckTime { 0 };
-    const TickType_t statusUpdateInterval { pdMS_TO_TICKS(200) };
+    const TickType_t statusUpdateInterval { pdMS_TO_TICKS(500) };
     const TickType_t debugUpdateInterval { pdMS_TO_TICKS(1000) };
     const TickType_t wifiCheckInterval { pdMS_TO_TICKS(20000) };
 
@@ -1146,7 +1146,7 @@ void processGCode(MachineState& cncState, GCodeProcessingState& gCodeState, Mult
                 // Rozpocznij ruch do offsetu
                 updateMotorSpeed('X', true, multiStepper, stepperX, stepperY, config); // rapid dla offsetu
                 updateMotorSpeed('Y', true, multiStepper, stepperX, stepperY, config);
-                
+
                 // Przygotuj pozycje docelowe dla MultiStepper
                 long positions[2];
                 positions[0] = targetXSteps;
