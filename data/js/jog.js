@@ -1,9 +1,18 @@
 /**
- * JavaScript dla strony sterowania ręcznego (jog.html)
- * ESP32 CNC Controller
+ * ========================================================================
+ * KONTROLER STEROWANIA RUCHEM JOG - ESP32-CNC-CONTROLLER
+ * ========================================================================
+ * Zarządzanie ruchem manualnym maszyny CNC z funkcjami:
+ * - Ruch JOG w osiach X/Y z kontrolą prędkości
+ * - Bazowanie i zerowanie pozycji
+ * - Sterowanie drutem grzejnym i wentylatorem
+ * - Obsługa klawiatury i interfejsu dotykowego
+ * - Monitoring statusów bezpieczeństwa
  */
 
-// Parametry globalne dla JOG
+// ================= ZMIENNE GLOBALNE =================
+
+// Stan maszyny CNC ze wszystkimi parametrami kontrolnymi
 let machineState = {
   state: 0, // 0=IDLE, 1=RUNNING, 2=JOG, 3=HOMING, 4=STOPPED, 5=ERROR
   wireOn: false,
@@ -13,11 +22,13 @@ let machineState = {
   limitYActive: false,
 };
 
-// EventSource do odbierania aktualizacji stanu maszyny
+// Połączenie EventSource do odbioru aktualizacji stanu
 let eventSource;
 
+// ================= KOMUNIKACJA Z SERWEREM =================
+
 /**
- * Inicjalizacja EventSource dla aktualizacji w czasie rzeczywistym
+ * Nawiązanie połączenia EventSource dla aktualizacji w czasie rzeczywistym
  */
 function initEventSource() {
   if (eventSource) {
@@ -41,13 +52,16 @@ function initEventSource() {
 
   eventSource.onerror = function (e) {
     console.error("Błąd EventSource:", e);
-    // Próba ponownego połączenia po 5 sekundach
+    // Automatyczne ponowne połączenie po awarii
     setTimeout(initEventSource, 5000);
   };
 }
 
+// ================= AKTUALIZACJA INTERFEJSU =================
+
 /**
- * Aktualizacja stanu maszyny na podstawie danych z EventSource
+ * Przetwarzanie danych statusu maszyny z serwera i aktualizacja UI
+ * @param {Object} data - Dane statusu otrzymane z EventSource
  */
 function updateMachineStatus(data) {
   // Aktualizacja stanu maszyny
@@ -58,14 +72,14 @@ function updateMachineStatus(data) {
   machineState.limitXActive = data.limitXActive || false;
   machineState.limitYActive = data.limitYActive || false;
 
-  // Aktualizacja przełączników
+  // Aktualizacja przełączników stanu urządzeń
   document.getElementById("wireSwitch").checked = machineState.wireOn;
   document.getElementById("fanSwitch").checked = machineState.fanOn;
 
-  // Aktualizacja statusów bezpieczeństwa
+  // Odświeżenie wskaźników bezpieczeństwa
   updateSafetyStatus();
 
-  // Aktualizacja statusu maszyny
+  // Wyświetlenie aktualnego statusu maszyny
   const statusText = document.getElementById("machine-status-text");
   switch (data.state) {
     case 0:
@@ -90,12 +104,13 @@ function updateMachineStatus(data) {
       statusText.textContent = "Nieznany";
   }
 
-  // Aktywacja/dezaktywacja przycisków zgodnie ze stanem maszyny
+  // Dostosowanie dostępności przycisków do aktualnego stanu
   updateButtonStates(data.state);
 }
 
 /**
- * Aktualizacja stanu przycisków w zależności od stanu maszyny
+ * Zarządzanie dostępnością przycisków kontrolnych według stanu maszyny
+ * @param {number} machineState - Kod stanu maszyny (0-5)
  */
 function updateButtonStates(machineState) {
   const jogButtons = document.querySelectorAll(".jog-button:not(.jog-center)");
@@ -106,34 +121,34 @@ function updateButtonStates(machineState) {
   const jogDistance = document.getElementById("jogDistance");
   const speedModeButtons = document.querySelectorAll('input[name="jogSpeedMode"]');
 
-  // Sprawdź czy maszyna jest dostępna do operacji JOG
-  const canJog = machineState === 0 || machineState === 2; // IDLE lub JOG
+  // Sprawdzenie czy dozwolony jest ruch JOG (IDLE lub aktywny JOG)
+  const canJog = machineState === 0 || machineState === 2;
 
-  // Aktywuj/dezaktywuj przyciski JOG
+  // Dostępność przycisków kierunkowych JOG
   jogButtons.forEach((button) => {
     button.disabled = !canJog;
   });
 
-  // Przyciski sterowania
-  homeBtn.disabled = machineState !== 0; // Tylko IDLE
-  zeroBtn.disabled = machineState !== 0; // Tylko IDLE
+  // Funkcje specjalne dostępne tylko w stanie spoczynku
+  homeBtn.disabled = machineState !== 0;
+  zeroBtn.disabled = machineState !== 0;
   
-  // Kontrolki konfiguracji JOG
+  // Kontrolki parametrów ruchu
   jogDistance.disabled = !canJog;
   speedModeButtons.forEach((radio) => {
     radio.disabled = !canJog;
   });
 
-  // Przełączniki urządzeń - zawsze dostępne (chyba że błąd)
-  wireSwitch.disabled = machineState === 5; // Tylko ERROR
-  fanSwitch.disabled = machineState === 5; // Tylko ERROR
+  // Przełączniki urządzeń - blokowane tylko przy błędzie krytycznym
+  wireSwitch.disabled = machineState === 5;
+  fanSwitch.disabled = machineState === 5;
 }
 
 /**
- * Aktualizacja statusów bezpieczeństwa
+ * Odświeżenie wskaźników stanu systemów bezpieczeństwa
  */
 function updateSafetyStatus() {
-  // E-STOP
+  // Stan przycisku bezpieczeństwa E-STOP
   const eStopIndicator = document.getElementById("estop-status");
   const eStopText = document.getElementById("estop-status-text");
 
@@ -145,7 +160,7 @@ function updateSafetyStatus() {
     eStopText.textContent = "Nieaktywny";
   }
 
-  // Krańcówka X
+  // Status krańcówki osi X
   const limitXIndicator = document.getElementById("limitx-status");
   const limitXText = document.getElementById("limitx-status-text");
 
@@ -157,7 +172,7 @@ function updateSafetyStatus() {
     limitXText.textContent = "Niezadziałana";
   }
 
-  // Krańcówka Y
+  // Status krańcówki osi Y
   const limitYIndicator = document.getElementById("limity-status");
   const limitYText = document.getElementById("limity-status-text");
 
@@ -170,11 +185,15 @@ function updateSafetyStatus() {
   }
 }
 
+// ================= FUNKCJE STEROWANIA RUCHEM =================
+
 /**
- * Wykonanie ruchu JOG
+ * Wykonanie ruchu JOG w określonym kierunku z walidacją parametrów
+ * @param {number} xDir - Kierunek X (-1, 0, 1)
+ * @param {number} yDir - Kierunek Y (-1, 0, 1)
  */
 function jog(xDir, yDir) {
-  // Pobierz odległość z pola input
+  // Walidacja wprowadzonej odległości ruchu
   const distanceInput = document.getElementById("jogDistance");
   const distance = parseFloat(distanceInput.value);
   
@@ -183,20 +202,20 @@ function jog(xDir, yDir) {
     return;
   }
 
-  // Pobierz wybrany tryb prędkości
+  // Sprawdzenie wybranego trybu prędkości
   const speedModeRadio = document.querySelector('input[name="jogSpeedMode"]:checked');
   if (!speedModeRadio) {
     showMessage("Wybierz tryb prędkości", "error");
     return;
   }
   
-  const speedMode = speedModeRadio.value; // "work" lub "rapid"
+  const speedMode = speedModeRadio.value;
 
-  // Oblicz przesunięcie
+  // Kalkulacja wektorów przesunięcia
   const xOffset = xDir * distance;
   const yOffset = yDir * distance;
 
-  // Wywołaj endpunkt API
+  // Wysłanie komendy do kontrolera
   fetch("/api/jog", {
     method: "POST",
     headers: {
@@ -216,7 +235,7 @@ function jog(xDir, yDir) {
     })
     .then((data) => {
       if (data.success) {
-        // Jeśli ruch się powiódł, wyświetl komunikat
+        // Formatowanie komunikatu o wykonanym ruchu
         let moveText = "";
         if (xOffset !== 0) moveText += `X${xOffset > 0 ? "+" : ""}${xOffset}`;
         if (xOffset !== 0 && yOffset !== 0) moveText += ", ";
@@ -238,7 +257,7 @@ function jog(xDir, yDir) {
 }
 
 /**
- * Funkcja zerowania pozycji
+ * Wyzerowanie aktualnej pozycji roboczej (bez ruchu fizycznego)
  */
 function zeroAxes() {
   fetch("/api/zero", {
@@ -268,7 +287,7 @@ function zeroAxes() {
 }
 
 /**
- * Funkcja bazowania maszyny
+ * Procedura bazowania - powrót do punktu odniesienia maszynowego
  */
 function homeAxes() {
   if (
@@ -305,8 +324,10 @@ function homeAxes() {
     });
 }
 
+// ================= STEROWANIE URZĄDZENIAMI =================
+
 /**
- * Sterowanie drutem grzejnym
+ * Przełączenie stanu drutu grzejnego z synchronizacją UI
  */
 function toggleWire() {
   const wireSwitch = document.getElementById("wireSwitch");
@@ -323,7 +344,8 @@ function toggleWire() {
   })
     .then((response) => {
       if (!response.ok) {
-        wireSwitch.checked = !wireState; // Przywróć poprzedni stan przełącznika
+        // Przywrócenie poprzedniego stanu przy błędzie
+        wireSwitch.checked = !wireState;
         throw new Error("Błąd sterowania drutem");
       }
       return response.json();
@@ -333,7 +355,7 @@ function toggleWire() {
         showMessage(`Drut grzejny ${wireState ? "włączony" : "wyłączony"}`);
         machineState.wireOn = wireState;
       } else {
-        wireSwitch.checked = !wireState; // Przywróć poprzedni stan przełącznika
+        wireSwitch.checked = !wireState;
         showMessage(
           "Nie udało się przełączyć drutu: " +
             (data.message || "Nieznany błąd"),
@@ -344,12 +366,12 @@ function toggleWire() {
     .catch((error) => {
       console.error("Błąd sterowania drutem:", error);
       showMessage("Błąd sterowania drutem: " + error.message, "error");
-      wireSwitch.checked = !wireState; // Przywróć poprzedni stan przełącznika
+      wireSwitch.checked = !wireState;
     });
 }
 
 /**
- * Sterowanie wentylatorem
+ * Przełączenie stanu wentylatora z synchronizacją UI
  */
 function toggleFan() {
   const fanSwitch = document.getElementById("fanSwitch");
@@ -366,7 +388,8 @@ function toggleFan() {
   })
     .then((response) => {
       if (!response.ok) {
-        fanSwitch.checked = !fanState; // Przywróć poprzedni stan przełącznika
+        // Przywrócenie poprzedniego stanu przy błędzie
+        fanSwitch.checked = !fanState;
         throw new Error("Błąd sterowania wentylatorem");
       }
       return response.json();
@@ -376,7 +399,7 @@ function toggleFan() {
         showMessage(`Wentylator ${fanState ? "włączony" : "wyłączony"}`);
         machineState.fanOn = fanState;
       } else {
-        fanSwitch.checked = !fanState; // Przywróć poprzedni stan przełącznika
+        fanSwitch.checked = !fanState;
         showMessage(
           "Nie udało się przełączyć wentylatora: " +
             (data.message || "Nieznany błąd"),
@@ -387,15 +410,18 @@ function toggleFan() {
     .catch((error) => {
       console.error("Błąd sterowania wentylatorem:", error);
       showMessage("Błąd sterowania wentylatorem: " + error.message, "error");
-      fanSwitch.checked = !fanState; // Przywróć poprzedni stan przełącznika
+      fanSwitch.checked = !fanState;
     });
 }
 
+// ================= OBSŁUGA KLAWIATURY =================
+
 /**
- * Obsługa sterowania klawiaturą
+ * Mapowanie klawiszy na funkcje sterowania (gdy focus nie jest na polach formularza)
+ * @param {KeyboardEvent} event - Zdarzenie klawiatury
  */
 function handleKeyboardControl(event) {
-  // Ignoruj sterowanie klawiaturą, gdy focus jest na polu formularza
+  // Wyłączenie sterowania gdy użytkownik pisze w polach formularza
   if (
     event.target.tagName === "INPUT" ||
     event.target.tagName === "SELECT" ||
@@ -404,6 +430,7 @@ function handleKeyboardControl(event) {
     return;
   }
 
+  // Mapowanie klawiszy na akcje sterowania
   switch (event.key) {
     case "ArrowUp":
       event.preventDefault();
@@ -446,14 +473,16 @@ function handleKeyboardControl(event) {
   }
 }
 
+// ================= INICJALIZACJA =================
+
 /**
- * Inicjalizacja po załadowaniu strony
+ * Konfiguracja interfejsu po załadowaniu strony
  */
 document.addEventListener("DOMContentLoaded", function () {
-  // Inicjalizacja EventSource
+  // Nawiązanie połączenia z serwerem dla aktualizacji czasu rzeczywistego
   initEventSource();
 
-  // Ustawienie obsługi przycisków JOG
+  // Konfiguracja przycisków kierunkowych JOG
   document.querySelectorAll(".jog-button").forEach((button) => {
     if (button.classList.contains("jog-center")) return;
 
@@ -464,14 +493,14 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // Obsługa przycisków zerowania i bazowania
+  // Konfiguracja przycisków funkcji specjalnych
   document.getElementById("zeroBtn").addEventListener("click", zeroAxes);
   document.getElementById("homeBtn").addEventListener("click", homeAxes);
 
-  // Obsługa przełączników
+  // Konfiguracja przełączników urządzeń
   document.getElementById("wireSwitch").addEventListener("change", toggleWire);
   document.getElementById("fanSwitch").addEventListener("change", toggleFan);
 
-  // Obsługa klawiatury
+  // Aktywacja sterowania klawiaturą
   document.addEventListener("keydown", handleKeyboardControl);
 });

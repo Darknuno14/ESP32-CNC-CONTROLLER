@@ -1,15 +1,31 @@
 /**
- * JavaScript for configuration page (config.html)
+ * ========================================================================
+ * ZARZĄDZANIE KONFIGURACJĄ MASZYNY CNC - ESP32-CNC-CONTROLLER
+ * ========================================================================
+ * Obsługa interfejsu konfiguracyjnego z funkcjami:
+ * - Ładowanie i zapisywanie parametrów osi X/Y
+ * - Konfiguracja prędkości pracy i szybkich ruchów
+ * - Ustawienia bezpieczeństwa (E-STOP, krańcówki)
+ * - Kontrola mocy drutu grzejnego i wentylatora
+ * - Walidacja wprowadzanych danych
  */
 
-// Zmienna do przechowywania EventSource
+// ================= ZMIENNE GLOBALNE =================
+
+// Połączenie EventSource do monitorowania stanu maszyny
 let eventSource;
 
-// --- Helper Functions ---
+// ================= KOMUNIKACJA Z SERWEREM =================
+
+/**
+ * Nawiązanie połączenia EventSource z automatycznym ponownym łączeniem
+ */
 
 function handleEventSource() {
   if (eventSource) eventSource.close();
   eventSource = new EventSource("/events");
+  
+  // Odbiór statusu maszyny dla aktualizacji UI
   eventSource.addEventListener("machine-status", function (e) {
     try {
       const data = JSON.parse(e.data);
@@ -18,16 +34,23 @@ function handleEventSource() {
       console.error("Error parsing EventSource data:", error);
     }
   });
+  
   eventSource.onopen = () => console.log("EventSource connection established");
   eventSource.onerror = () => {
     console.error("EventSource error");
+    // Automatyczne ponowne połączenie po awarii
     setTimeout(handleEventSource, 5000);
   };
 }
 
-// --- Main Functions ---
+// ================= OPERACJE NA KONFIGURACJI =================
+
+/**
+ * Pobieranie aktualnej konfiguracji z kontrolera i wypełnienie formularza
+ */
 
 function loadConfiguration() {
+  // Aktywacja wskaźnika ładowania
   document.getElementById("loadingSpinner").style.display = "inline-block";
   document.getElementById("loadBtn").disabled = true;
 
@@ -38,9 +61,9 @@ function loadConfiguration() {
       return response.json();
     })
     .then((config) => {
-      console.log("Loaded config:", config); // Debug log
+      console.log("Loaded config:", config);
       
-      // X Axis configuration - POPRAWIONA STRUKTURA
+      // Konfiguracja osi X - wypełnienie wszystkich pól parametrów
       if (config.xAxis) {
         const xStepsPerMM = document.getElementById("xStepsPerMM");
         const xWorkFeedRate = document.getElementById("xWorkFeedRate");
@@ -57,7 +80,7 @@ function loadConfiguration() {
         if (offsetX) offsetX.value = config.xAxis.offset || 0;
       }
       
-      // Y Axis configuration - POPRAWIONA STRUKTURA
+      // Konfiguracja osi Y - wypełnienie wszystkich pól parametrów
       if (config.yAxis) {
         const yStepsPerMM = document.getElementById("yStepsPerMM");
         const yWorkFeedRate = document.getElementById("yWorkFeedRate");
@@ -74,7 +97,7 @@ function loadConfiguration() {
         if (offsetY) offsetY.value = config.yAxis.offset || 0;
       }
       
-      // General configuration
+      // Ustawienia ogólne systemu
       const useGCodeFeedRate = document.getElementById("useGCodeFeedRate");
       const delayAfterStartup = document.getElementById("delayAfterStartup");
       const deactivateESTOP = document.getElementById("deactivateESTOP");
@@ -99,10 +122,16 @@ function loadConfiguration() {
       showMessage(`Failed to load configuration: ${error.message}`, "error");
     })
     .finally(() => {
+      // Wyłączenie wskaźnika ładowania
       document.getElementById("loadingSpinner").style.display = "none";
       document.getElementById("loadBtn").disabled = false;
     });
 }
+
+/**
+ * Zapisanie konfiguracji z walidacją i strukturyzacją danych
+ * @param {Event} event - Zdarzenie submit formularza
+ */
 
 function saveConfiguration(event) {
   event.preventDefault();
@@ -112,12 +141,13 @@ function saveConfiguration(event) {
     return;
   }
 
+  // Aktywacja wskaźnika zapisywania
   document.getElementById("savingSpinner").style.display = "inline-block";
   document.getElementById("saveBtn").disabled = true;
 
   const formData = new FormData(document.getElementById("configForm"));
 
-  // POPRAWIONA STRUKTURA JSON DO WYSYŁANIA
+  // Strukturyzacja danych konfiguracyjnych dla API
   const config = {
     xAxis: {
       stepsPerMM: parseFloat(formData.get("xAxis.stepsPerMM")) || 0,
@@ -144,7 +174,7 @@ function saveConfiguration(event) {
     fanPower: parseFloat(formData.get("fanPower")) || 0,
   };
 
-  console.log("Saving config:", config); // Debug log
+  console.log("Saving config:", config);
 
   fetch("/api/config", {
     method: "POST",
@@ -169,14 +199,24 @@ function saveConfiguration(event) {
       showMessage(`Failed to save configuration: ${error.message}`, "error");
     })
     .finally(() => {
+      // Wyłączenie wskaźnika zapisywania
       document.getElementById("savingSpinner").style.display = "none";
       document.getElementById("saveBtn").disabled = false;
     });
 }
 
+// ================= WALIDACJA DANYCH =================
+
+/**
+ * Sprawdzenie poprawności wszystkich pól numerycznych w formularzu
+ * @returns {boolean} true jeśli wszystkie pola są poprawne
+ */
+
 function validateForm() {
   let isValid = true;
   const inputs = document.querySelectorAll('#configForm input[type="number"]');
+  
+  // Sprawdzenie każdego pola numerycznego
   inputs.forEach((input) => {
     input.classList.remove("is-invalid");
     const value = parseFloat(input.value);
@@ -188,11 +228,30 @@ function validateForm() {
   return isValid;
 }
 
-// --- Initialization ---
+/**
+ * Aktualizacja dostępności kontrolek na podstawie stanu maszyny
+ * @param {Object} data - Dane statusu maszyny
+ */
+function updateMachineStatus(data) {
+  const saveBtn = document.getElementById("saveBtn");
+
+  // Blokada zapisu konfiguracji podczas pracy maszyny
+  if (saveBtn) {
+    saveBtn.disabled = data.state === 1 || data.state === 2 || data.state === 3;
+  }
+}
+
+// ================= INICJALIZACJA =================
+
+/**
+ * Konfiguracja interfejsu po załadowaniu strony
+ */
 
 document.addEventListener("DOMContentLoaded", function () {
+  // Nawiązanie połączenia z serwerem
   handleEventSource();
 
+  // Konfiguracja przycisków akcji
   document
     .getElementById("loadBtn")
     .addEventListener("click", loadConfiguration);
@@ -201,6 +260,7 @@ document.addEventListener("DOMContentLoaded", function () {
     .getElementById("configForm")
     .addEventListener("submit", saveConfiguration);
 
+  // Walidacja w czasie rzeczywistym dla pól numerycznych
   document
     .querySelectorAll('#configForm input[type="number"]')
     .forEach((input) => {
@@ -213,15 +273,6 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     });
 
+  // Automatyczne załadowanie konfiguracji przy starcie
   loadConfiguration();
 });
-
-// Aktualizacja stanu kontrolek na podstawie stanu maszyny
-function updateMachineStatus(data) {
-  const saveBtn = document.getElementById("saveBtn");
-
-  // Wyłącz przycisk zapisu gdy maszyna jest zajęta
-  if (saveBtn) {
-    saveBtn.disabled = data.state === 1 || data.state === 2 || data.state === 3;
-  }
-}

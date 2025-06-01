@@ -1,8 +1,20 @@
 /**
- * Wspólne funkcje dla wszystkich stron ESP32 CNC
+ * ========================================================================
+ * WSPÓLNE FUNKCJE JAVASCRIPT DLA INTERFEJSU WEB ESP32-CNC-CONTROLLER
+ * ========================================================================
+ * Zawiera uniwersalne funkcje wykorzystywane na wszystkich stronach:
+ * - Komunikacja EventSource z serwerem
+ * - System komunikatów użytkownika
+ * - Zarządzanie statusem karty SD
+ * - Funkcje pomocnicze debugowania
  */
 
-// Ujednolicona obsługa EventSource z możliwością przekazania callbacka
+// ================= OBSŁUGA KOMUNIKACJI Z SERWEREM =================
+
+/**
+ * Zarządzanie połączeniem EventSource z możliwością callbacka dla statusu maszyny
+ * @param {Function} onMachineStatus - Funkcja wykonywana przy odbiorze statusu
+ */
 function handleEventSource(onMachineStatus) {
   if (window.eventSource) {
     window.eventSource.close();
@@ -20,14 +32,17 @@ function handleEventSource(onMachineStatus) {
     });
   }
 
+  // Opcjonalna obsługa ogólnych wiadomości
   window.eventSource.addEventListener("message", function (e) {
     console.log("Generic message received:", e.data);
   });
 
+  // Zarządzanie stanem połączenia
   window.eventSource.onopen = function () {
     console.log("EventSource connection established");
   };
 
+  // Automatyczne ponowne połączenie w przypadku błędu
   window.eventSource.onerror = function () {
     console.error("EventSource error");
     setTimeout(() => {
@@ -36,7 +51,13 @@ function handleEventSource(onMachineStatus) {
   };
 }
 
-// Funkcja do wyświetlania komunikatów
+// ================= SYSTEM KOMUNIKATÓW UŻYTKOWNIKA =================
+
+/**
+ * Wyświetlanie komunikatów w dedykowanym kontenerze
+ * @param {string} message - Treść komunikatu
+ * @param {string} type - Typ: "success", "error", "warning", "info"
+ */
 function showMessage(message, type = "success") {
   const messageElement = document.getElementById("message-container");
   if (!messageElement) return;
@@ -44,7 +65,7 @@ function showMessage(message, type = "success") {
   messageElement.textContent = message;
   messageElement.style.display = "block";
 
-  // Ustaw odpowiednią klasę dla koloru tła
+  // Mapowanie typów na klasy Bootstrap
   messageElement.className = "alert ";
   if (type === "error") {
     messageElement.className += "alert-danger";
@@ -56,13 +77,17 @@ function showMessage(message, type = "success") {
     messageElement.className += "alert-success";
   }
 
-  // Ukryj komunikat po 5 sekundach
+  // Automatyczne ukrycie po 5 sekundach
   setTimeout(() => {
     messageElement.style.display = "none";
   }, 5000);
 }
 
-// Funkcja do aktualizacji statusu karty SD
+// ================= ZARZĄDZANIE KARTĄ SD =================
+
+/**
+ * Aktualizacja wizualnego statusu karty SD w interfejsie
+ */
 function updateSDStatus() {
   fetch("/api/sd-status")
     .then((response) => response.json())
@@ -74,7 +99,7 @@ function updateSDStatus() {
           data.initialized ? "status-on" : "status-off"
         );
 
-        // Aktualizuj tekst statusu jeśli istnieje
+        // Aktualizacja tekstu statusu w interfejsie
         const statusTextElement = document.getElementById("sd-status-text");
         if (statusTextElement) {
           statusTextElement.textContent = data.initialized
@@ -86,12 +111,14 @@ function updateSDStatus() {
     .catch((error) => console.error("Error fetching SD status:", error));
 }
 
-// Funkcja do reinicjalizacji karty SD
+/**
+ * Reinicjalizacja karty SD z obsługą stanu UI
+ */
 function reinitializeSD() {
-  // Pokaż stan ładowania
   const button = document.querySelector('button[onclick="reinitializeSD()"]');
   if (!button) return;
 
+  // Blokada UI podczas operacji
   const originalText = button.textContent;
   button.textContent = "Reinitializing...";
   button.disabled = true;
@@ -101,6 +128,7 @@ function reinitializeSD() {
     .then((data) => {
       if (data.success) {
         console.log("SD card reinitialized successfully");
+        // Odświeżenie listy plików jeśli funkcja dostępna
         if (typeof refreshFileList === "function") {
           refreshFileList();
         }
@@ -119,17 +147,20 @@ function reinitializeSD() {
       showMessage("Error reinitializing SD card", "error");
     })
     .finally(() => {
-      // Przywróć stan przycisku
+      // Przywrócenie stanu przycisku
       button.textContent = originalText;
       button.disabled = false;
     });
 }
 
-// Aktualizacja statusu przy załadowaniu strony
-document.addEventListener("DOMContentLoaded", () => {
-  updateSDStatus();
-});
+// ================= FUNKCJE POMOCNICZE =================
 
+/**
+ * Funkcja debugowania żądań HTTP z logowaniem
+ * @param {string} url - Adres URL
+ * @param {Object} options - Opcje fetch
+ * @returns {Promise} Promise z odpowiedzią
+ */
 function debugFetch(url, options = {}) {
   console.log(`Fetching: ${url}`, options);
 
@@ -143,3 +174,10 @@ function debugFetch(url, options = {}) {
       throw error;
     });
 }
+
+// ================= INICJALIZACJA =================
+
+// Automatyczna aktualizacja statusu karty SD przy załadowaniu strony
+document.addEventListener("DOMContentLoaded", () => {
+  updateSDStatus();
+});

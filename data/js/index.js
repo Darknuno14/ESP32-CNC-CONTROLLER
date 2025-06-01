@@ -1,23 +1,40 @@
+/*
+===============================================================================
+                    ESP32 CNC CONTROLLER - STRONA GŁÓWNA
+===============================================================================
+Plik obsługuje główną stronę kontrolera CNC (index.html):
+- Wyświetlanie statusu maszyny i postępu zadań
+- Wizualizacja ścieżki ruchu na canvasie
+- Sterowanie podstawowymi operacjami (start/pause/stop)
+- Aktualizacja interfejsu w czasie rzeczywistym przez EventSource
+
+Autor: ESP32 CNC Controller Project
+===============================================================================
+*/
+
+// ===============================================================================
+// ZMIENNE GLOBALNE - Śledzenie ścieżki ruchu maszyny
+// ===============================================================================
+let pathPoints = [];     // Tablica punktów ścieżki ruchu maszyny
+let lastX = null, lastY = null;  // Ostatnie współrzędne do optymalizacji rysowania
+
+// ===============================================================================
+// AKTUALIZACJA INTERFEJSU - Funkcje zarządzania widokiem statusu
+// ===============================================================================
+
 /**
- * JavaScript for main page (index.html)
+ * Aktualizacja statusu maszyny w interfejsie użytkownika
+ * @param {number} machineState - Stan maszyny (0=IDLE, 1=RUNNING, 2=JOG, 3=HOMING, 4=STOPPED, 5=ERROR)
  */
-
-// --- Ścieżka ruchu maszyny ---
-let pathPoints = [];
-let lastX = null, lastY = null;
-
-// --- Helper Functions ---
-
-// Funkcja do aktualizacji statusu maszyny w UI
 function updateMachineStatusUI(machineState) {
   const statusElement = document.getElementById("machine-status");
   const statusTextElement = document.getElementById("machine-status-text");
   
   if (statusElement && statusTextElement) {
-    // Usuń poprzednie klasy statusu
+    // Czyszczenie poprzednich klas statusu
     statusElement.classList.remove("status-on", "status-off", "status-warning");
     
-    // Mapowanie stanów maszyny
+    // Przypisanie odpowiedniego statusu wizualnego na podstawie stanu maszyny
     switch (machineState) {
       case 0: // IDLE
         statusElement.classList.add("status-off");
@@ -50,31 +67,36 @@ function updateMachineStatusUI(machineState) {
   }
 }
 
-// --- Main Functions ---
+// ===============================================================================
+// ZARZĄDZANIE DANYMI MASZYNY - Główne funkcje aktualizacji interfejsu
+// ===============================================================================
 
-// Aktualizacja interfejsu na podstawie danych o stanie maszyny
+/**
+ * Kompleksowa aktualizacja interfejsu na podstawie danych o stanie maszyny
+ * @param {Object} data - Dane statusu maszyny z serwera
+ */
 function updateUIWithMachineState(data) {
   // Aktualizuj status maszyny
   updateMachineStatusUI(data.state);
 
-  // Nazwa pliku
+  // Wyświetlenie aktywnego projektu
   const selectedFileElement = document.getElementById("selected-file");
   if (selectedFileElement)
     selectedFileElement.textContent = data.currentProject && data.currentProject.length > 0
       ? data.currentProject
       : "Nie wybrano pliku";
 
-  // Aktualna linia
+  // Aktualnie wykonywana linia G-code
   const currentLineElement = document.getElementById("current-line");
   if (currentLineElement)
     currentLineElement.textContent = data.currentLine ?? 0;
 
-  // Liczba linii
+  // Łączna liczba linii w aktywnym pliku
   const totalLinesElement = document.getElementById("total-lines");
   if (totalLinesElement)
     totalLinesElement.textContent = data.totalLines ?? 0;
 
-  // Czas pracy
+  // Formatowanie i wyświetlanie czasu wykonywania zadania
   const jobTimeElement = document.getElementById("job-time");
   if (jobTimeElement && data.jobRunTime !== undefined) {
     const seconds = Math.floor(data.jobRunTime / 1000);
@@ -83,7 +105,7 @@ function updateUIWithMachineState(data) {
     jobTimeElement.textContent = `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
   }
 
-  // Pasek postępu
+  // Wizualizacja postępu wykonania zadania
   const progressBarElement = document.getElementById("job-progress");
   if (progressBarElement) {
     const progress = data.jobProgress || 0;
@@ -92,23 +114,27 @@ function updateUIWithMachineState(data) {
     progressBarElement.setAttribute("aria-valuenow", progress);
   }
 
-  // Aktualizacja stanu przycisków
+  // Aktualizacja dostępności przycisków sterowania
   updateButtonStates(data.state, data.isPaused);
 }
 
-// Aktualizacja stanu przycisków na podstawie stanu maszyny
+/**
+ * Zarządzanie dostępnością przycisków sterowania w zależności od stanu maszyny
+ * @param {number} machineState - Aktualny stan maszyny
+ * @param {boolean} isPaused - Czy maszyna jest w stanie pauzy
+ */
 function updateButtonStates(machineState, isPaused) {
   const startBtn = document.getElementById("startBtn");
   const pauseBtn = document.getElementById("pauseBtn");
   const stopBtn = document.getElementById("stopBtn");
 
-  // Stan: IDLE
+  // Maszyna bezczynna - dostępne tylko uruchomienie
   if (machineState === 0) {
     if (startBtn) startBtn.disabled = false;
     if (pauseBtn) pauseBtn.disabled = true;
     if (stopBtn) stopBtn.disabled = true;
   }
-  // Stan: RUNNING
+  // Maszyna w pracy - dostępne pauza i stop
   else if (machineState === 1) {
     if (startBtn) startBtn.disabled = true;
     if (pauseBtn) {
@@ -117,13 +143,13 @@ function updateButtonStates(machineState, isPaused) {
     }
     if (stopBtn) stopBtn.disabled = false;
   }
-  // Stan: JOG, HOMING
+  // Sterowanie ręczne lub powrót do pozycji domowej
   else if (machineState === 2 || machineState === 3) {
     if (startBtn) startBtn.disabled = true;
     if (pauseBtn) pauseBtn.disabled = true;
     if (stopBtn) stopBtn.disabled = false;
   }
-  // Stan: STOPPED, ERROR
+  // Maszyna zatrzymana lub błąd - tylko stop dostępny
   else if (machineState === 4 || machineState === 5) {
     if (startBtn) startBtn.disabled = true;
     if (pauseBtn) pauseBtn.disabled = true;
@@ -131,7 +157,15 @@ function updateButtonStates(machineState, isPaused) {
   }
 }
 
-// Rysowanie ścieżki na canvasie
+// ===============================================================================
+// WIZUALIZACJA ŚCIEŻKI - Rysowanie ruchu maszyny na canvasie
+// ===============================================================================
+
+/**
+ * Aktualizacja ścieżki ruchu maszyny z optymalizacją powtarzających się punktów
+ * @param {number} x - Współrzędna X
+ * @param {number} y - Współrzędna Y
+ */
 function updatePathCanvas(x, y) {
   if (x == null || y == null) return;
   if (lastX !== x || lastY !== y) {
@@ -142,13 +176,16 @@ function updatePathCanvas(x, y) {
   }
 }
 
+/**
+ * Renderowanie ścieżki ruchu na canvasie z siatką współrzędnych
+ */
 function drawPath() {
   const canvas = document.getElementById("machine-path-canvas");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Rysuj siatkę
+  // Generowanie siatki pomocniczej co 50 pikseli
   ctx.strokeStyle = "#eee";
   ctx.lineWidth = 1;
   for (let i = 0; i <= canvas.width; i += 50) {
@@ -164,7 +201,7 @@ function drawPath() {
     ctx.stroke();
   }
 
-  // Rysuj osie od lewego dolnego rogu
+  // Rysowanie głównych osi układu współrzędnych (lewy dolny róg = 0,0)
   ctx.strokeStyle = "#bbb";
   ctx.lineWidth = 2;
   // Oś X (pozioma, na dole)
@@ -179,7 +216,7 @@ function drawPath() {
   ctx.stroke();
   ctx.lineWidth = 1;
 
-  // Rysuj ścieżkę (transformacja Y)
+  // Renderowanie ścieżki ruchu maszyny z odwróceniem osi Y
   if (pathPoints.length > 1) {
     ctx.strokeStyle = "#007bff";
     ctx.lineWidth = 2;
@@ -193,7 +230,13 @@ function drawPath() {
   }
 }
 
-// Funkcje sterowania maszyną
+// ===============================================================================
+// STEROWANIE MASZYNĄ - Funkcje komunikacji z API kontrolera
+// ===============================================================================
+
+/**
+ * Rozpoczęcie wykonywania wybranego projektu
+ */
 function startProcessing() {
   fetch("/api/start", { method: "POST" })
     .then((response) => response.json())
@@ -206,6 +249,9 @@ function startProcessing() {
     });
 }
 
+/**
+ * Wstrzymanie lub wznowienie wykonywania projektu
+ */
 function pauseProcessing() {
   fetch("/api/pause", { method: "POST" })
     .then((response) => response.json())
@@ -218,6 +264,9 @@ function pauseProcessing() {
     });
 }
 
+/**
+ * Zatrzymanie wykonywania projektu
+ */
 function stopProcessing() {
   fetch("/api/stop", { method: "POST" })
     .then((response) => response.json())
@@ -230,7 +279,15 @@ function stopProcessing() {
     });
 }
 
-// Prosta funkcja do pokazywania komunikatów
+// ===============================================================================
+// FUNKCJE POMOCNICZE - Komunikaty i notyfikacje
+// ===============================================================================
+
+/**
+ * Wyświetlenie komunikatu użytkownikowi z automatycznym ukryciem
+ * @param {string} msg - Treść komunikatu
+ * @param {string} type - Typ komunikatu ('success' lub 'error')
+ */
 function showMessage(msg, type = "success") {
   const msgContainer = document.getElementById("message-container");
   if (!msgContainer) return;
@@ -242,10 +299,12 @@ function showMessage(msg, type = "success") {
   }, 3000);
 }
 
-// --- Initialization ---
+// ===============================================================================
+// INICJALIZACJA - Konfiguracja strony i obsługa zdarzeń
+// ===============================================================================
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Użyj funkcji handleEventSource z common.js z callbackiem
+  // Inicjalizacja połączenia EventSource z funkcją callback dla aktualizacji UI
   handleEventSource((data) => {
     updateUIWithMachineState(data);
     updatePathCanvas(data.currentX, data.currentY);
