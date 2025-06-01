@@ -6,6 +6,7 @@
 #include <AsyncTCP.h>
 #include <AccelStepper.h>
 #include <MultiStepper.h>
+#include <Ticker.h>
 
 #include <vector>
 #include <string>
@@ -34,6 +35,15 @@ QueueHandle_t stateQueue {};   // Od CNC do Control (informacje o stanie)
 QueueHandle_t commandQueue {}; // Od Control do CNC (komendy sterujące)
 
 bool systemInitialized { false }; // Flaga do sprawdzania, czy system został zainicjalizowany
+
+// Globalne obiekty dla stepperów i timer
+Ticker stepperTicker;
+MultiStepper multiStepper;
+
+// Funkcja obsługi przerwania dla stepperów (ISR)
+void IRAM_ATTR onStepperTimer() {
+    multiStepper.run();
+}
 
 /*
 * ------------------------------------------------------------------------------------------------------------
@@ -179,8 +189,7 @@ void taskCNC(void* parameter) {
     AccelStepper stepperX(AccelStepper::DRIVER, PINCONFIG::STEP_X_PIN, PINCONFIG::DIR_X_PIN);
     AccelStepper stepperY(AccelStepper::DRIVER, PINCONFIG::STEP_Y_PIN, PINCONFIG::DIR_Y_PIN);
     
-    // MultiStepper do synchronizacji ruchów
-    MultiStepper multiStepper;
+    // Dodaj steppery do globalnego MultiStepper
     multiStepper.addStepper(stepperX);
     multiStepper.addStepper(stepperY);
 
@@ -213,12 +222,22 @@ void taskCNC(void* parameter) {
     stepperX.setCurrentPosition(0);
     stepperY.setCurrentPosition(0);
 
+    // Uruchom timer dla stepperów (generowanie impulsów w przerwaniach)
+    // Przelicz mikrosekundy na sekundy (CONFIG::STEPPER_TIMER_FREQUENCY_US to 100µs = 0.0001s)
+    float timerIntervalSeconds = CONFIG::STEPPER_TIMER_FREQUENCY_US / 1000000.0f;
+    stepperTicker.attach(timerIntervalSeconds, onStepperTimer);
+
+    #ifdef DEBUG_CNC_TASK
+    Serial.printf("DEBUG CNC: Timer stepperów uruchomiony z częstotliwością %lu µs (%.6f s)\n", 
+                  CONFIG::STEPPER_TIMER_FREQUENCY_US, timerIntervalSeconds);
+    #endif
+
     while (true) {
         TickType_t currentTime { xTaskGetTickCount() };
-        if (cncState.state != CNCState::STOPPED && cncState.state != CNCState::ERROR) {
-            multiStepper.run();
-        }
-        else {
+        
+        // Uwaga: multiStepper.run() jest teraz wywoływane w przerwaniu timera!
+        // Pozostawiamy logikę zatrzymywania silników w stanach STOPPED/ERROR
+        if (cncState.state == CNCState::STOPPED || cncState.state == CNCState::ERROR) {
             // Jeśli maszyna jest w stanie STOPPED lub ERROR, zatrzymaj silniki
             stepperX.stop();
             stepperY.stop();

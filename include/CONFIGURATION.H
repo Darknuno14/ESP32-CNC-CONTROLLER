@@ -56,6 +56,10 @@ namespace CONFIG {
     constexpr BaseType_t CORE_1 { 1 };
 
     // ============================================================================
+    // Konfiguracja timera dla stepperów
+    constexpr uint32_t STEPPER_TIMER_FREQUENCY_US { 100 }; // [µs] Częstotliwość timera dla stepperów (100µs = 10kHz)
+
+    // ============================================================================
 
     // Maksymalny czas oczekiwania na połączenie z WiFi
     constexpr long MAX_CONNECTION_TIME { 10000 }; // [ms] 
