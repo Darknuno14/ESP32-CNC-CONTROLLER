@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ESP32 CNC - Projects</title>
+    <title>ESP32 CNC - Projekty</title>
     <link rel="icon" href="data:," />
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
@@ -17,7 +17,7 @@
   </head>
   <body>
     <div class="container">
-      <h1 class="mt-3 mb-3">ESP32 CNC - Projects</h1>
+      <h1 class="mt-3 mb-3">ESP32 CNC - Projekty</h1>
 
       <!-- Navigation menu -->
       <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
@@ -34,16 +34,16 @@
           <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav">
               <li class="nav-item">
-                <a class="nav-link" href="/">Home</a>
+                <a class="nav-link" href="/">Strona Główna</a>
               </li>
               <li class="nav-item">
-                <a class="nav-link active" href="/projects.html">Projects</a>
+                <a class="nav-link active" href="/projects.html">Projekty</a>
               </li>
               <li class="nav-item">
-                <a class="nav-link" href="/jog.html">Control</a>
+                <a class="nav-link" href="/jog.html">Sterowanie</a>
               </li>
               <li class="nav-item">
-                <a class="nav-link" href="/config.html">Configuration</a>
+                <a class="nav-link" href="/config.html">Konfiguracja</a>
               </li>
             </ul>
           </div>
@@ -56,23 +56,23 @@
       <!-- SD Card Status -->
       <div class="d-flex align-items-center mb-3">
         <div class="d-flex align-items-center">
-          <span class="me-2">SD Card:</span>
+          <span class="me-2">Karta SD:</span>
           <div id="sd-status" class="status-indicator me-2"></div>
-          <span id="sd-status-text">Unknown</span>
+          <span id="sd-status-text">Nieznany</span>
         </div>
         <button
           type="button"
           class="btn btn-secondary btn-sm ms-3"
           onclick="reinitializeSD()"
         >
-          Re-initialize SD
+          Załaduj ponownie SD
         </button>
       </div>
 
       <!-- Available Files Section -->
       <div class="card mb-4">
         <div class="card-header">
-          <h2 class="h5 mb-0">Available G-Code Files</h2>
+          <h2 class="h5 mb-0">Dostępne Pliki G-Code</h2>
         </div>
         <div class="card-body">
           <div class="d-flex justify-content-between mb-3">
@@ -81,7 +81,7 @@
               class="btn btn-secondary"
               onclick="refreshFileList()"
             >
-              <i class="bi bi-arrow-clockwise"></i> Refresh Files
+              <i class="bi bi-arrow-clockwise"></i> Odśwież Pliki
             </button>
             <button
               type="button"
@@ -89,7 +89,7 @@
               data-bs-toggle="modal"
               data-bs-target="#uploadModal"
             >
-              <i class="bi bi-upload"></i> Upload New File
+              <i class="bi bi-upload"></i> Prześlij Nowy Plik
             </button>
           </div>
 
@@ -107,13 +107,13 @@
             <table class="table table-hover project-table">
               <thead>
                 <tr>
-                  <th>File Name</th>
-                  <th>Actions</th>
+                  <th>Nazwa Pliku</th>
+                  <th>Akcje</th>
                 </tr>
               </thead>
               <tbody id="file-list">
                 <tr>
-                  <td colspan="2" class="text-center">Loading files...</td>
+                  <td colspan="2" class="text-center">Ładowanie plików...</td>
                 </tr>
               </tbody>
             </table>
@@ -124,36 +124,8 @@
             id="no-files-message"
             style="display: none"
           >
-            No G-code files found on SD card. Upload new files using the button
-            above.
-          </div>
-        </div>
-      </div>
-
-      <!-- G-Code Preview Section -->
-      <div class="card mb-4">
-        <div
-          class="card-header d-flex justify-content-between align-items-center"
-        >
-          <h2 class="h5 mb-0">G-Code Preview</h2>
-          <button
-            id="visualizeBtn"
-            class="btn btn-sm btn-secondary"
-            onclick="visualizeSelectedGCode()"
-          >
-            <i class="bi bi-eye"></i> Preview Selected File
-          </button>
-        </div>
-        <div class="card-body">
-          <p id="selected-file" class="mb-3">No file selected</p>
-          <div class="gcode-preview-container">
-            <canvas
-              id="canvas"
-              width="800"
-              height="600"
-              style="width: 100%; height: auto; border: 1px solid #ccc"
-            ></canvas>
-          </div>
+            Nie znaleziono plików G-code na karcie SD. Prześlij nowe pliki za pomocą przycisku
+            powyżej.
           </div>
         </div>
       </div>
@@ -171,7 +143,7 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="uploadModalLabel">
-              Upload G-Code File
+              Prześlij Plik G-Code
             </h5>
             <button
               type="button"
@@ -183,7 +155,7 @@
           <div class="modal-body">
             <form id="uploadForm" enctype="multipart/form-data">
               <div class="mb-3">
-                <label for="fileInput" class="form-label">Select File</label>
+                <label for="fileInput" class="form-label">Wybierz Plik</label>
                 <input
                   type="file"
                   name="file"
@@ -220,14 +192,14 @@
               class="btn btn-secondary"
               data-bs-dismiss="modal"
             >
-              Close
+              Zamknij
             </button>
             <button
               type="button"
               class="btn btn-primary"
               onclick="uploadFile()"
             >
-              Upload
+              Prześlij
             </button>
           </div>
         </div>
@@ -245,7 +217,7 @@
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="gCodeModalLabel">G-Code Content</h5>
+            <h5 class="modal-title" id="gCodeModalLabel">Zawartość G-Code</h5>
             <button
               type="button"
               class="btn-close"
@@ -267,8 +239,34 @@
               class="btn btn-secondary"
               data-bs-dismiss="modal"
             >
-              Close
+              Zamknij
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- G-Code Preview Modal -->
+    <div class="modal fade" id="gCodePreviewModal" tabindex="-1" aria-labelledby="gCodePreviewModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="gCodePreviewModalLabel">Podgląd G-Code</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+          </div>
+          <div class="modal-body">
+            <div id="previewLoadingIndicator" class="text-center">
+              <div class="spinner-border" role="status">
+                <span class="visually-hidden">Ładowanie...</span>
+              </div>
+              <p>Generowanie podglądu...</p>
+            </div>
+            <div class="gcode-preview-container" style="display: none;">
+              <canvas id="gcodePreviewCanvas" width="800" height="600" style="width: 100%; height: auto; border: 1px solid #ccc; background: #fafbfc;"></canvas>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zamknij</button>
           </div>
         </div>
       </div>

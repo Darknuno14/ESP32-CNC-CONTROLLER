@@ -8,13 +8,13 @@ let selectedFilename = null;
 // Zmienna do przechowywania EventSource
 let eventSource;
 
+// AbortController for G-Code preview
+let gcodePreviewAbortController = null;
+
 // --- Helper Functions ---
 
 function setSelectedFile(filename) {
   selectedFilename = filename;
-  document.getElementById("selected-file").textContent = filename
-    ? `Selected file: ${filename}`
-    : "No file selected";
   localStorage.setItem("selectedFile", filename || "");
   // Zaznacz radio button jeśli istnieje
   const radioButton = document.querySelector(`input[value="${filename}"]`);
@@ -65,7 +65,7 @@ function updateFileList(files) {
     const actionsCell = document.createElement("td");
     actionsCell.innerHTML = `
       <div class="project-actions">
-        <button class="btn btn-sm btn-primary" onclick="previewFile('${file}')">Preview</button>
+        <button class="btn btn-sm btn-primary" onclick="previewFile('${file}')">Podgląd</button>
         <button class="btn btn-sm btn-info" onclick="viewGCode('${file}')">View Code</button>
         <button class="btn btn-sm btn-danger" onclick="deleteFile('${file}')">Delete</button>
       </div>
@@ -155,228 +155,260 @@ function viewGCode(filename) {
     });
 }
 
-function previewFile(filename) {
-  setSelectedFile(filename);
-  visualizeGCode(filename);
+async function previewFile(filename) {
+  setSelectedFile(filename); // Keep for internal state and radio button check
+
+  // If there's an ongoing preview, abort it
+  if (gcodePreviewAbortController) {
+    gcodePreviewAbortController.abort();
+  }
+  gcodePreviewAbortController = new AbortController();
+  const signal = gcodePreviewAbortController.signal;
+
+  const modalElement = document.getElementById("gCodePreviewModal");
+  const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+  
+  const modalTitle = document.getElementById("gCodePreviewModalLabel");
+  const loadingIndicator = document.getElementById("previewLoadingIndicator");
+  const previewContainer = modalElement.querySelector(".gcode-preview-container");
+  const canvas = document.getElementById("gcodePreviewCanvas");
+
+  if (modalTitle) modalTitle.textContent = `Podgląd G-Code: ${filename}`;
+  
+  // Reset to loading state
+  if (loadingIndicator) {
+    loadingIndicator.style.display = "block";
+    loadingIndicator.innerHTML = `
+      <div class="spinner-border" role="status">
+        <span class="visually-hidden">Ładowanie...</span>
+      </div>
+      <p>Generowanie podglądu...</p>`;
+  }
+  if (previewContainer) previewContainer.style.display = "none";
+  
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  modal.show();
+
+  try {
+    const response = await fetch("/api/sd_content?file=" + encodeURIComponent(filename), { signal });
+    if (!response.ok) {
+      throw new Error("Nie udało się pobrać pliku: " + response.statusText);
+    }
+    const gcode = await response.text();
+
+    if (signal.aborted) {
+      console.log("Preview fetch aborted.");
+      return;
+    }
+
+    await processGCodeChunked(gcode, "gcodePreviewCanvas", signal);
+    
+    if (!signal.aborted) {
+        if (loadingIndicator) loadingIndicator.style.display = "none";
+        if (previewContainer) previewContainer.style.display = "block";
+    } else {
+        // Ensure loading indicator is hidden if aborted during processing
+        if (loadingIndicator) loadingIndicator.style.display = "none";
+        // Optionally, show a "cancelled" message or just keep canvas blank
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = "16px Arial";
+        ctx.fillStyle = "#333";
+        ctx.textAlign = "center";
+        ctx.fillText("Generowanie podglądu anulowane.", canvas.width / 2, canvas.height / 2);
+        if (previewContainer) previewContainer.style.display = "block"; // Show canvas with message
+    }
+
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.log("Operacja generowania podglądu została anulowana.");
+      if (loadingIndicator) {
+        loadingIndicator.style.display = "block"; // Keep it visible or change to a cancelled message
+        loadingIndicator.innerHTML = `<p class="text-info">Generowanie podglądu anulowane.</p>`;
+      }
+       if (previewContainer) previewContainer.style.display = "none";
+    } else {
+      showMessage(`Nie udało się wygenerować podglądu: ${error.message}`, "error");
+      if (loadingIndicator) {
+        loadingIndicator.innerHTML = `<p class="text-danger">Błąd podczas generowania podglądu: ${error.message}</p>`;
+      }
+      if (previewContainer) previewContainer.style.display = "none";
+    }
+  }
 }
 
+// This function is kept for conceptual compatibility but previewFile is the main entry point.
 function visualizeGCode(filename) {
-  if (!filename) filename = selectedFilename;
-  if (!filename) {
-    showMessage("Please select a file first.", "warning");
+  console.warn("visualizeGCode is deprecated for modal preview. Use previewFile.");
+  if (filename) {
+    previewFile(filename);
+  } else if (selectedFilename) {
+    previewFile(selectedFilename);
+  } else {
+    showMessage("Proszę najpierw wybrać plik.", "warning");
+  }
+}
+
+// Renderowanie wizualizacji G-code w kawałkach
+async function processGCodeChunked(gcode, canvasId, abortSignal) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) {
+    console.error("Canvas element with ID '" + canvasId + "' not found.");
+    // Update loading indicator if modal is still open
+    const loadingIndicator = document.getElementById("previewLoadingIndicator");
+    if (loadingIndicator && document.getElementById("gCodePreviewModal")?.classList.contains('show')) {
+        loadingIndicator.innerHTML = `<p class="text-danger">Błąd wewnętrzny: Nie znaleziono elementu canvas podglądu.</p>`;
+    }
     return;
   }
-  fetch("/api/sd_content?file=" + encodeURIComponent(filename))
-    .then((response) => {
-      if (!response.ok) throw new Error("Failed to fetch file: " + response.status);
-      return response.text();
-    })
-    .then((gcode) => {
-      renderGCodePreview(gcode);
-    })
-    .catch((error) => {
-      showMessage(`Failed to fetch G-Code file: ${error.message}`, "error");
-    });
-}
-
-// Renderowanie wizualizacji G-code
-function renderGCodePreview(gcode) {
-  const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
   const gcodeLines = gcode.split("\n");
 
-  // Wyczyść canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Ustaw parametry rysowania
-  ctx.strokeStyle = "#1E88E5"; // Niebieski kolor dla lepszej widoczności
-  ctx.lineWidth = 2;
-
-  // Inicjalizacja współrzędnych
-  let currentX = 0;
-  let currentY = 0;
-  let firstMove = true;
-
-  // Znajdź min/max współrzędne do skalowania
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
+  // --- Phase 1: Parse all G-Code to get points and bounds ---
+  let currentX = 0, currentY = 0;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const points = [];
   let movesCount = 0;
 
-  // Pierwsza pętla do zebrania wszystkich punktów
-  gcodeLines.forEach((line) => {
-    line = line.trim().toUpperCase();
-
-    // Usuń komentarze
+  for (const lineContent of gcodeLines) {
+    if (abortSignal.aborted) { console.log("Parsing aborted"); return; }
+    let line = lineContent.trim().toUpperCase();
     const commentIndex = line.indexOf(";");
-    if (commentIndex !== -1) {
-      line = line.substring(0, commentIndex).trim();
-    }
+    if (commentIndex !== -1) line = line.substring(0, commentIndex).trim();
 
-    if (
-      line.startsWith("G0") ||
-      line.startsWith("G1") ||
-      line.startsWith("G00") ||
-      line.startsWith("G01")
-    ) {
+    if (line.startsWith("G0") || line.startsWith("G1") || line.startsWith("G00") || line.startsWith("G01")) {
       const xMatch = line.match(/X([-\d\.]+)/);
       const yMatch = line.match(/Y([-\d\.]+)/);
-
       if (xMatch || yMatch) {
         movesCount++;
-
         const x = xMatch ? parseFloat(xMatch[1]) : currentX;
         const y = yMatch ? parseFloat(yMatch[1]) : currentY;
-
-        points.push({
-          x,
-          y,
-          rapid: line.startsWith("G0") || line.startsWith("G00"),
-        });
-
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
-
-        currentX = x;
-        currentY = y;
+        points.push({ x, y, rapid: line.startsWith("G0") || line.startsWith("G00") });
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+        currentX = x; currentY = y;
       }
     }
-  });
+  }
 
-  // Jeśli nie ma punktów, wyświetl komunikat
+  if (abortSignal.aborted) { console.log("Processing aborted after parsing points."); return; }
+
   if (points.length === 0 || movesCount === 0) {
-    ctx.font = "16px Arial";
-    ctx.fillStyle = "#333";
-    ctx.textAlign = "center";
-    ctx.fillText(
-      "No valid G-code moves found in file",
-      canvas.width / 2,
-      canvas.height / 2
-    );
+    ctx.font = "16px Arial"; ctx.fillStyle = "#333"; ctx.textAlign = "center";
+    ctx.fillText("Brak prawidłowych ruchów G-code w pliku", canvas.width / 2, canvas.height / 2);
     return;
   }
 
-  // Oblicz współczynniki skalowania
-  const canvasWidth = canvas.width - 40; // Margines
-  const canvasHeight = canvas.height - 40; // Margines
-  const contentWidth = maxX - minX || 1; // Zabezpieczenie przed dzieleniem przez 0
-  const contentHeight = maxY - minY || 1; // Zabezpieczenie przed dzieleniem przez 0
-
-  const scaleX = canvasWidth / contentWidth;
-  const scaleY = canvasHeight / contentHeight;
+  // --- Calculate scale and offset (once) ---
+  const canvasWidth = canvas.width - 40; const canvasHeight = canvas.height - 40;
+  const contentWidth = maxX - minX || 1; const contentHeight = maxY - minY || 1;
+  const scaleX = canvasWidth / contentWidth; const scaleY = canvasHeight / contentHeight;
   const scale = Math.min(scaleX, scaleY);
-
-  // Oblicz offset do wycentrowania rysunku
   const offsetX = (canvas.width - contentWidth * scale) / 2;
   const offsetY = (canvas.height - contentHeight * scale) / 2;
 
-  // Narysuj siatkę pomocniczą
+  // --- Draw static elements (grid, axes) ---
   drawGrid(ctx, canvas.width, canvas.height, 20, "#E0E0E0");
-
-  // Narysuj osie
   drawAxes(ctx, canvas.width, canvas.height);
 
-  // Druga pętla do rysowania
-  ctx.beginPath();
-  firstMove = true;
+  // --- Phase 2: Render points in chunks ---
+  const chunkSize = 100; // Process 100 points before yielding
+  ctx.lineWidth = 2;
+  
+  let firstMoveInPath = true; // Tracks if this is the first move for the current path segment
 
-  points.forEach((point, index) => {
+  // Start the main path for the drawing.
+  // Individual segments will be stroked, but this helps manage state.
+  ctx.beginPath(); 
+
+  for (let i = 0; i < points.length; i++) {
+    if (abortSignal.aborted) {
+      console.log("Chunked rendering loop aborted.");
+      ctx.stroke(); // Draw whatever has been processed so far
+      return;
+    }
+
+    const point = points[i];
     const x = (point.x - minX) * scale + offsetX;
-    const y = canvas.height - ((point.y - minY) * scale + offsetY); // Odwróć oś Y
+    const y = canvas.height - ((point.y - minY) * scale + offsetY);
 
-    if (firstMove) {
+    if (firstMoveInPath) {
+      ctx.strokeStyle = point.rapid ? "#FF5722" : "#1E88E5";
       ctx.moveTo(x, y);
-      firstMove = false;
+      firstMoveInPath = false;
     } else {
-      // Zmień kolor linii dla szybkich ruchów
-      if (point.rapid) {
-        ctx.strokeStyle = "#FF5722"; // Czerwony dla szybkich ruchów
-      } else {
-        ctx.strokeStyle = "#1E88E5"; // Niebieski dla normalnych ruchów
+      const prevPoint = points[i - 1];
+      // If color/type changes OR current move is rapid (G0)
+      if (point.rapid || point.rapid !== prevPoint.rapid) {
+        ctx.stroke(); // Finish previous segment
+        ctx.beginPath(); // Start new segment
+        // Move to the end of the previous segment (which is prevPoint's screen coordinates)
+        const prevScreenX = (prevPoint.x - minX) * scale + offsetX;
+        const prevScreenY = canvas.height - ((prevPoint.y - minY) * scale + offsetY);
+        ctx.moveTo(prevScreenX, prevScreenY);
       }
-
-      // Zamknij poprzednią ścieżkę i rozpocznij nową jeśli zmienia się typ ruchu
-      if (index > 0 && point.rapid !== points[index - 1].rapid) {
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-      } else {
+      
+      ctx.strokeStyle = point.rapid ? "#FF5722" : "#1E88E5";
+      if (point.rapid) { // If it's a rapid move
+        ctx.moveTo(x, y); // Just move, don't draw line
+      } else { // If it's a cutting move
         ctx.lineTo(x, y);
       }
     }
+    
+    // Stroke the current segment (line or move for G0) before drawing the dot
+    ctx.stroke(); 
 
-    // Rysuj punkty w miejscach zmian współrzędnych
-    ctx.stroke();
-    ctx.beginPath();
+    // Draw the point marker (small circle)
     ctx.fillStyle = point.rapid ? "#FF5722" : "#1E88E5";
+    ctx.beginPath(); // New path for the arc
     ctx.arc(x, y, 2, 0, 2 * Math.PI);
     ctx.fill();
-    ctx.beginPath();
 
-    // Kontynuuj linię
-    if (index > 0) {
-      const prevX = (points[index - 1].x - minX) * scale + offsetX;
-      const prevY =
-        canvas.height - ((points[index - 1].y - minY) * scale + offsetY);
-      ctx.moveTo(prevX, prevY);
-      ctx.lineTo(x, y);
+    // Prepare for the next segment by ensuring the path's current position is this point
+    // This makes the current point the start of the next potential lineTo or moveTo
+    ctx.beginPath(); 
+    ctx.moveTo(x, y);
+
+    // Yield to browser every `chunkSize` points
+    if ((i + 1) % chunkSize === 0 && i < points.length -1) { // Avoid yielding after the very last point
+      await new Promise(resolve => setTimeout(resolve, 10));
+      if (abortSignal.aborted) { // Check again after yield
+          console.log("Chunked rendering aborted after yield.");
+          ctx.stroke(); // Draw what has been processed so far
+          return;
+      }
     }
-  });
+  }
+  // Final stroke for the very last segment (might be redundant if last point was G0).
+  ctx.stroke(); 
 
-  ctx.stroke();
+  if (abortSignal.aborted) {
+      console.log("Processing aborted before drawing legend/start point.");
+      return;
+  }
 
-  // Dodaj wskaźnik początku ścieżki
+  // Add start indicator
   if (points.length > 0) {
     const startX = (points[0].x - minX) * scale + offsetX;
     const startY = canvas.height - ((points[0].y - minY) * scale + offsetY);
-
-    ctx.beginPath();
-    ctx.fillStyle = "#4CAF50"; // Zielony kolor dla punktu startowego
-    ctx.arc(startX, startY, 5, 0, 2 * Math.PI);
-    ctx.fill();
-
-    // Dodaj etykietę "Start"
-    ctx.font = "12px Arial";
-    ctx.fillStyle = "#000";
-    ctx.fillText("Start", startX + 10, startY);
+    ctx.beginPath(); ctx.fillStyle = "#4CAF50"; ctx.arc(startX, startY, 5, 0, 2 * Math.PI); ctx.fill();
+    ctx.font = "12px Arial"; ctx.fillStyle = "#000"; ctx.fillText("Start", startX + 10, startY);
   }
 
-  // Dodaj informacje o zakresie współrzędnych
-  const infoText = `X: ${minX.toFixed(2)} to ${maxX.toFixed(
-    2
-  )}, Y: ${minY.toFixed(2)} to ${maxY.toFixed(2)}`;
-  ctx.font = "12px Arial";
-  ctx.fillStyle = "#000";
-  ctx.textAlign = "left";
-  ctx.fillText(infoText, 10, 20);
+  // Add coordinate range info
+  const infoText = `X: ${minX.toFixed(2)} do ${maxX.toFixed(2)}, Y: ${minY.toFixed(2)} do ${maxY.toFixed(2)}`;
+  ctx.font = "12px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left"; ctx.fillText(infoText, 10, 20);
 
-  // Dodaj legendę
+  // Add legend
   const legendY = canvas.height - 20;
-
-  ctx.beginPath();
-  ctx.strokeStyle = "#1E88E5";
-  ctx.lineWidth = 2;
-  ctx.moveTo(10, legendY);
-  ctx.lineTo(40, legendY);
-  ctx.stroke();
-
-  ctx.font = "12px Arial";
-  ctx.fillStyle = "#000";
-  ctx.textAlign = "left";
-  ctx.fillText("Cutting move (G1)", 45, legendY + 4);
-
-  ctx.beginPath();
-  ctx.strokeStyle = "#FF5722";
-  ctx.lineWidth = 2;
-  ctx.moveTo(150, legendY);
-  ctx.lineTo(180, legendY);
-  ctx.stroke();
-
-  ctx.fillText("Rapid move (G0)", 185, legendY + 4);
+  ctx.beginPath(); ctx.strokeStyle = "#1E88E5"; ctx.lineWidth = 2; ctx.moveTo(10, legendY); ctx.lineTo(40, legendY); ctx.stroke();
+  ctx.font = "12px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left"; ctx.fillText("Ruch tnący (G1)", 45, legendY + 4);
+  ctx.beginPath(); ctx.strokeStyle = "#FF5722"; ctx.lineWidth = 2; ctx.moveTo(150, legendY); ctx.lineTo(180, legendY); ctx.stroke();
+  ctx.fillText("Szybki ruch (G0)", 185, legendY + 4);
 }
 
 // Funkcja rysująca siatkę
@@ -417,20 +449,9 @@ function drawAxes(ctx, width, height) {
   ctx.stroke();
 }
 
-// Funkcja wizualizacji wybranego pliku G-code - wywoływana przez przycisk Preview
-function visualizeSelectedGCode() {
-  const selectedFile = selectedFilename;
-  if (!selectedFile) {
-    showMessage("Please select a file first.", "warning");
-    return;
-  }
-
-  visualizeGCode(selectedFile);
-}
-
 // Usunięcie pliku
 function deleteFile(filename) {
-  if (!confirm(`Are you sure you want to delete the file "${filename}"?`)) return;
+  if (!confirm(`Czy na pewno chcesz usunąć plik "${filename}"?`)) return; // Translated confirm
   fetch("/api/delete-file?file=" + encodeURIComponent(filename), { method: "POST" })
     .then((response) => {
       if (!response.ok) throw new Error("Failed to delete file");
@@ -442,10 +463,25 @@ function deleteFile(filename) {
         refreshFileList();
         if (selectedFilename === filename) {
           setSelectedFile(null);
-          // Wyczyść canvas
-          const canvas = document.getElementById("canvas");
-          const ctx = canvas.getContext("2d");
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          // If the deleted file was being previewed, abort its generation
+          if (gcodePreviewAbortController) {
+            gcodePreviewAbortController.abort();
+            gcodePreviewAbortController = null; // Reset controller
+          }
+          // Wyczyść canvas w modalu, jeśli był to podglądany plik
+          const modalCanvas = document.getElementById("gcodePreviewCanvas");
+          if (modalCanvas) {
+            const ctxModal = modalCanvas.getContext("2d");
+            ctxModal.clearRect(0, 0, modalCanvas.width, modalCanvas.height);
+          }
+          // Ukryj kontener podglądu w modalu i pokaż (pusty) wskaźnik ładowania, jeśli modal jest otwarty
+          const modalPreviewContainer = document.getElementById("gCodePreviewModal")?.querySelector(".gcode-preview-container");
+          const modalLoadingIndicator = document.getElementById("previewLoadingIndicator");
+          if (modalPreviewContainer) modalPreviewContainer.style.display = "none";
+          if (modalLoadingIndicator && document.getElementById("gCodePreviewModal")?.classList.contains('show')) {
+            modalLoadingIndicator.style.display = "block";
+            modalLoadingIndicator.innerHTML = "<p>Plik został usunięty. Wybierz inny plik do podglądu.</p>";
+          }
         }
       } else {
         showMessage(`Failed to delete file: ${data.message || "Unknown error"}`, "error");
@@ -462,7 +498,7 @@ function uploadFile() {
   const progressBar = document.getElementById("progress-bar");
   const uploadMessage = document.getElementById("upload-message");
   if (fileInput.files.length === 0) {
-    uploadMessage.textContent = "Please select a file.";
+    uploadMessage.textContent = "Proszę wybrać plik."; // Translated
     uploadMessage.className = "alert alert-warning";
     uploadMessage.style.display = "block";
     return;
@@ -482,7 +518,7 @@ function uploadFile() {
     .then(() => {
       progressBar.style.width = "100%";
       progressBar.textContent = "100%";
-      uploadMessage.textContent = "File uploaded successfully!";
+      uploadMessage.textContent = "Plik przesłany pomyślnie!"; // Translated
       uploadMessage.className = "alert alert-success";
       uploadMessage.style.display = "block";
       refreshFileList();
@@ -495,7 +531,7 @@ function uploadFile() {
       }, 1500);
     })
     .catch((error) => {
-      uploadMessage.textContent = "Upload failed: " + error.message;
+      uploadMessage.textContent = "Przesyłanie nie powiodło się: " + error.message; // Translated
       uploadMessage.className = "alert alert-danger";
       uploadMessage.style.display = "block";
       progressContainer.style.display = "none";
@@ -511,4 +547,16 @@ document.addEventListener("DOMContentLoaded", () => {
     event.preventDefault();
     uploadFile();
   });
+
+  // Add event listener for G-Code Preview Modal close
+  const gCodePreviewModalElement = document.getElementById('gCodePreviewModal');
+  if (gCodePreviewModalElement) {
+    gCodePreviewModalElement.addEventListener('hide.bs.modal', () => {
+      if (gcodePreviewAbortController) {
+        gcodePreviewAbortController.abort();
+        console.log("G-Code preview generation aborted by modal close.");
+        // No need to reset gcodePreviewAbortController here, previewFile will create a new one.
+      }
+    });
+  }
 });

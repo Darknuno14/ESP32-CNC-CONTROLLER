@@ -279,8 +279,8 @@ void taskCNC(void* parameter) {
 
 
 
-                cncState.currentX = stepperX.currentPosition() / config.X.stepsPerMM;
-                cncState.currentY = stepperY.currentPosition() / config.Y.stepsPerMM;
+               // cncState.currentX = stepperX.currentPosition() / config.X.stepsPerMM;
+                // cncState.currentY = stepperY.currentPosition() / config.Y.stepsPerMM;
                 // Przetwarzanie G-code
                 if (commandPending) {
                     commandPending = false;
@@ -401,7 +401,7 @@ void taskControl(void* parameter) {
     MachineState receivedState {};
     TickType_t lastStatusUpdateTime { 0 };
     TickType_t lastDebugTime { 0 };
-    const TickType_t statusUpdateInterval { pdMS_TO_TICKS(500) };
+    const TickType_t statusUpdateInterval { pdMS_TO_TICKS(200) };
     const TickType_t debugUpdateInterval { pdMS_TO_TICKS(1000) };
 
     if (!systemInitialized) {
@@ -1098,7 +1098,8 @@ bool processLinearMove(const String& line, AccelStepper& stepperX, AccelStepper&
 
         // Dodaj offset i konwertuj na kroki
         float targetXWithOffset = targetX + config.X.offset;
-        stepperX.moveTo(targetXWithOffset * config.X.stepsPerMM);
+        // stepperX.moveTo(targetXWithOffset * config.X.stepsPerMM);
+        cncState.currentX = targetXWithOffset;
         hasMovement = true;
     }
 
@@ -1116,10 +1117,12 @@ bool processLinearMove(const String& line, AccelStepper& stepperX, AccelStepper&
 
         // Dodaj offset i konwertuj na kroki
         float targetYWithOffset = targetY + config.Y.offset;
-        stepperY.moveTo(targetYWithOffset * config.Y.stepsPerMM);
+        // stepperY.moveTo(targetYWithOffset * config.Y.stepsPerMM);
+        cncState.currentY = targetYWithOffset;    
         hasMovement = true;
 
     }
 
+    vTaskDelay(pdMS_TO_TICKS(200)); // Krótkie opóźnienie dla stabilności
     return hasMovement;
 }
