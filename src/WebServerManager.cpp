@@ -231,6 +231,18 @@ void WebServerManager::setupIndexRoutes() {
 
         request->send(200, "application/json", "{\"success\":true}");
         });
+
+    // Przycisk RESET (powrót do IDLE z stanów STOPPED/ERROR)
+    server->on("/api/reset", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: Komenda RESET");
+        #endif
+
+        // RESET używa tej samej komendy co STOP - w stanie STOPPED/ERROR komenda STOP resetuje do IDLE
+        this->sendCommand(CommandType::STOP);
+
+        request->send(200, "application/json", "{\"success\":true}");
+        });
 }
 
 void WebServerManager::setupConfigRoutes() {
@@ -342,21 +354,26 @@ void WebServerManager::setupJogRoutes() {
                 }
 
                 // Sprawdź, czy wymagane parametry istnieją
-                if (!doc["x"].is<float>() || !doc["y"].is<float>() || !doc["speed"].is<float>()) {
+                if (!doc["x"].is<float>() || !doc["y"].is<float>() || !doc["speedMode"].is<const char*>()) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing parameters\"}");
                     return;
                 }
 
                 float x = doc["x"].as<float>();
                 float y = doc["y"].as<float>();
-                float speed = doc["speed"].as<float>();
+                String speedMode = doc["speedMode"].as<String>();
+
+                // Konwertuj tryb prędkości na wartość numeryczną
+                // 0.0 = WORK mode, 1.0 = RAPID mode
+                float speedValue = (speedMode == "rapid") ? 1.0f : 0.0f;
 
                 #ifdef DEBUG_SERVER_ROUTES
-                Serial.printf("DEBUG SERVER STATUS: JOG command: X=%.2f, Y=%.2f, Speed=%.2f\n", x, y, speed);
+                Serial.printf("DEBUG SERVER STATUS: JOG command: X=%.2f, Y=%.2f, SpeedMode=%s (%.1f)\n", 
+                              x, y, speedMode.c_str(), speedValue);
                 #endif
 
                 // Wyślij komendę JOG przez kolejkę
-                this->sendCommand(CommandType::JOG, x, y, speed);
+                this->sendCommand(CommandType::JOG, x, y, speedValue);
 
                 request->send(200, "application/json", "{\"success\":true}");
                 });
@@ -396,9 +413,8 @@ void WebServerManager::setupJogRoutes() {
                 Serial.printf("DEBUG SERVER STATUS: Wire control: %s\n", state ? "ON" : "OFF");
                 #endif
 
-                // TODO: Implementacja sterowania drutem grzejnym
-                // tymczasowo jako CommandType::JOG z parametrami -1, -1, state ? 1.0 : 0.0
-                this->sendCommand(CommandType::JOG, -1, -1, state ? 1.0 : 0.0);
+                // Wyślij komendę sterowania drutem przez kolejkę
+                this->sendCommand(CommandType::SET_HOTWIRE, state ? 1.0f : 0.0f, 0.0f, 0.0f);
 
                 request->send(200, "application/json", "{\"success\":true}");
                 });
@@ -438,26 +454,36 @@ void WebServerManager::setupJogRoutes() {
                 Serial.printf("DEBUG SERVER STATUS: Fan control: %s\n", state ? "ON" : "OFF");
                 #endif
 
-                // TODO: Implementacja sterowania wentylatorem
-                // tymczasowo jako CommandType::JOG z parametrami -2, -2, state ? 1.0 : 0.0
-                this->sendCommand(CommandType::JOG, -2, -2, state ? 1.0 : 0.0);
+                // Wyślij komendę sterowania wentylatorem przez kolejkę
+                this->sendCommand(CommandType::SET_FAN, state ? 1.0f : 0.0f, 0.0f, 0.0f);
 
                 request->send(200, "application/json", "{\"success\":true}");
                 });
         }
     );
 
-    // Endpoint do pobierania aktualnej pozycji
-    server->on("/api/position", HTTP_GET, [this](AsyncWebServerRequest* request) {
+    // Endpoint do bazowania maszyny
+    server->on("/api/home", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
-        Serial.println("DEBUG SERVER STATUS: Position requested");
+        Serial.println("DEBUG SERVER STATUS: Home command requested");
         #endif
 
-        // TODO: należałoby pobierać aktualną pozycję z systemu
-        // Tymczasowo zwracamy zerowe współrzędne
-        String response = "{\"x\":0.0,\"y\":0.0}";
+        // Wyślij komendę bazowania przez kolejkę
+        this->sendCommand(CommandType::HOME);
 
-        request->send(200, "application/json", response);
+        request->send(200, "application/json", "{\"success\":true}");
+        });
+
+    // Endpoint do zerowania pozycji
+    server->on("/api/zero", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        #ifdef DEBUG_SERVER_ROUTES
+        Serial.println("DEBUG SERVER STATUS: Zero command requested");
+        #endif
+
+        // Wyślij komendę zerowania przez kolejkę
+        this->sendCommand(CommandType::ZERO);
+
+        request->send(200, "application/json", "{\"success\":true}");
         });
 }
 

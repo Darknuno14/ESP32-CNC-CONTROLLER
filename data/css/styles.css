@@ -89,21 +89,6 @@
   margin-bottom: 1rem;
 }
 
-.position-display {
-  font-family: monospace;
-  font-size: 1.2rem;
-  padding: 0.5rem;
-  background-color: #f8f9fa;
-  border: 1px solid #ced4da;
-  border-radius: 0.25rem;
-  margin-bottom: 1rem;
-}
-
-.position-coordinates {
-  display: flex;
-  justify-content: space-around;
-}
-
 /* Status message */
 .status-message {
   margin: 1rem 0;
@@ -118,9 +103,5 @@
     width: 50px;
     height: 50px;
     font-size: 1rem;
-  }
-
-  .position-coordinates {
-    flex-direction: column;
   }
 }

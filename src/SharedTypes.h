@@ -13,6 +13,8 @@ enum class CommandType {
     JOG,
     ZERO,
     RELOAD_CONFIG,
+    SET_HOTWIRE,      // Sterowanie drutem grzejnym
+    SET_FAN,          // Sterowanie wentylatorem
 };
 
 struct WebserverCommand {
@@ -105,5 +107,31 @@ struct GCodeProcessingState {
     unsigned long heatingDuration { 0 };  // Czas nagrzewania w ms
     
     // Dane o błędzie
+    String errorMessage { "" };
+};
+
+struct HomingState {
+    // Stan bazowania
+    enum class HomingStage {
+        IDLE,           // Oczekiwanie na rozpoczęcie bazowania
+        HOMING_X,       // Bazowanie osi X
+        HOMING_Y,       // Bazowanie osi Y
+        FINISHED,       // Bazowanie zakończone
+        ERROR           // Błąd podczas bazowania
+    };
+    
+    HomingStage stage { HomingStage::IDLE };
+    
+    // Parametry bazowania
+    float homingSpeed { 10.0f };       // Prędkość bazowania w mm/s
+    float homingAcceleration { 10.0f }; // Akceleracja bazowania w mm/s²
+    float backoffDistance { 2.0f };    // Odległość wycofania po dotknięciu krańcówki w mm
+    
+    // Stan procesu
+    bool movementInProgress { false };
+    bool limitReached { false };
+    bool backoffComplete { false };
+    
+    // Informacje o błędzie
     String errorMessage { "" };
 };

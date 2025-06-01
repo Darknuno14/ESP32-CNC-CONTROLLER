@@ -4,11 +4,13 @@
  */
 
 // Parametry globalne dla JOG
-let currentPosition = { x: 0, y: 0 };
 let machineState = {
   state: 0, // 0=IDLE, 1=RUNNING, 2=JOG, 3=HOMING, 4=STOPPED, 5=ERROR
   wireOn: false,
   fanOn: false,
+  eStopActive: false,
+  limitXActive: false,
+  limitYActive: false,
 };
 
 // EventSource do odbierania aktualizacji stanu maszyny
@@ -48,23 +50,20 @@ function initEventSource() {
  * Aktualizacja stanu maszyny na podstawie danych z EventSource
  */
 function updateMachineStatus(data) {
-  // Aktualizacja pozycji
-  currentPosition.x = data.currentX || 0;
-  currentPosition.y = data.currentY || 0;
-
-  document.getElementById("position-x").textContent =
-    currentPosition.x.toFixed(3);
-  document.getElementById("position-y").textContent =
-    currentPosition.y.toFixed(3);
-
   // Aktualizacja stanu maszyny
   machineState.state = data.state;
   machineState.wireOn = data.hotWireOn || false;
   machineState.fanOn = data.fanOn || false;
+  machineState.eStopActive = data.eStopActive || false;
+  machineState.limitXActive = data.limitXActive || false;
+  machineState.limitYActive = data.limitYActive || false;
 
   // Aktualizacja przełączników
   document.getElementById("wireSwitch").checked = machineState.wireOn;
   document.getElementById("fanSwitch").checked = machineState.fanOn;
+
+  // Aktualizacja statusów bezpieczeństwa
+  updateSafetyStatus();
 
   // Aktualizacja statusu maszyny
   const statusText = document.getElementById("machine-status-text");
@@ -99,42 +98,99 @@ function updateMachineStatus(data) {
  * Aktualizacja stanu przycisków w zależności od stanu maszyny
  */
 function updateButtonStates(machineState) {
-  const jogButtons = document.querySelectorAll(".jog-button");
-  const zeroBtn = document.getElementById("zeroBtn");
+  const jogButtons = document.querySelectorAll(".jog-button:not(.jog-center)");
   const homeBtn = document.getElementById("homeBtn");
+  const zeroBtn = document.getElementById("zeroBtn");
   const wireSwitch = document.getElementById("wireSwitch");
   const fanSwitch = document.getElementById("fanSwitch");
+  const jogDistance = document.getElementById("jogDistance");
+  const speedModeButtons = document.querySelectorAll('input[name="jogSpeedMode"]');
 
-  // Jeśli maszyna jest w stanie innym niż IDLE lub JOG, wyłącz przyciski JOG
-  const enableJog = machineState === 0 || machineState === 2;
+  // Sprawdź czy maszyna jest dostępna do operacji JOG
+  const canJog = machineState === 0 || machineState === 2; // IDLE lub JOG
 
+  // Aktywuj/dezaktywuj przyciski JOG
   jogButtons.forEach((button) => {
-    button.disabled = !enableJog;
+    button.disabled = !canJog;
   });
 
-  // Przyciski zero i home aktywne tylko w stanie IDLE
-  zeroBtn.disabled = machineState !== 0;
-  homeBtn.disabled = machineState !== 0;
+  // Przyciski sterowania
+  homeBtn.disabled = machineState !== 0; // Tylko IDLE
+  zeroBtn.disabled = machineState !== 0; // Tylko IDLE
+  
+  // Kontrolki konfiguracji JOG
+  jogDistance.disabled = !canJog;
+  speedModeButtons.forEach((radio) => {
+    radio.disabled = !canJog;
+  });
 
-  // Przełączniki urządzeń są zawsze aktywne
-  wireSwitch.disabled = false;
-  fanSwitch.disabled = false;
+  // Przełączniki urządzeń - zawsze dostępne (chyba że błąd)
+  wireSwitch.disabled = machineState === 5; // Tylko ERROR
+  fanSwitch.disabled = machineState === 5; // Tylko ERROR
+}
+
+/**
+ * Aktualizacja statusów bezpieczeństwa
+ */
+function updateSafetyStatus() {
+  // E-STOP
+  const eStopIndicator = document.getElementById("estop-status");
+  const eStopText = document.getElementById("estop-status-text");
+
+  if (machineState.eStopActive) {
+    eStopIndicator.className = "status-indicator error";
+    eStopText.textContent = "AKTYWNY";
+  } else {
+    eStopIndicator.className = "status-indicator success";
+    eStopText.textContent = "Nieaktywny";
+  }
+
+  // Krańcówka X
+  const limitXIndicator = document.getElementById("limitx-status");
+  const limitXText = document.getElementById("limitx-status-text");
+
+  if (machineState.limitXActive) {
+    limitXIndicator.className = "status-indicator warning";
+    limitXText.textContent = "Zadziałana";
+  } else {
+    limitXIndicator.className = "status-indicator success";
+    limitXText.textContent = "Niezadziałana";
+  }
+
+  // Krańcówka Y
+  const limitYIndicator = document.getElementById("limity-status");
+  const limitYText = document.getElementById("limity-status-text");
+
+  if (machineState.limitYActive) {
+    limitYIndicator.className = "status-indicator warning";
+    limitYText.textContent = "Zadziałana";
+  } else {
+    limitYIndicator.className = "status-indicator success";
+    limitYText.textContent = "Niezadziałana";
+  }
 }
 
 /**
  * Wykonanie ruchu JOG
  */
 function jog(xDir, yDir) {
-  // Pobierz wybraną odległość
-  const distanceRadio = document.querySelector(
-    'input[name="jogDistance"]:checked'
-  );
-  if (!distanceRadio) return;
-  const distance = parseFloat(distanceRadio.value);
+  // Pobierz odległość z pola input
+  const distanceInput = document.getElementById("jogDistance");
+  const distance = parseFloat(distanceInput.value);
+  
+  if (isNaN(distance) || distance <= 0) {
+    showMessage("Wprowadź poprawną odległość ruchu", "error");
+    return;
+  }
 
-  // Pobierz wybraną prędkość
-  const speedSelect = document.getElementById("jogSpeed");
-  const speed = parseInt(speedSelect.value);
+  // Pobierz wybrany tryb prędkości
+  const speedModeRadio = document.querySelector('input[name="jogSpeedMode"]:checked');
+  if (!speedModeRadio) {
+    showMessage("Wybierz tryb prędkości", "error");
+    return;
+  }
+  
+  const speedMode = speedModeRadio.value; // "work" lub "rapid"
 
   // Oblicz przesunięcie
   const xOffset = xDir * distance;
@@ -149,7 +205,7 @@ function jog(xDir, yDir) {
     body: JSON.stringify({
       x: xOffset,
       y: yOffset,
-      speed: speed,
+      speedMode: speedMode,
     }),
   })
     .then((response) => {
@@ -166,15 +222,8 @@ function jog(xDir, yDir) {
         if (xOffset !== 0 && yOffset !== 0) moveText += ", ";
         if (yOffset !== 0) moveText += `Y${yOffset > 0 ? "+" : ""}${yOffset}`;
 
-        showMessage(`Ruch: ${moveText} z prędkością ${speed} mm/min`);
-
-        // Przewidywana nowa pozycja - zostanie zaktualizowana przez EventSource
-        currentPosition.x += xOffset;
-        currentPosition.y += yOffset;
-        document.getElementById("position-x").textContent =
-          currentPosition.x.toFixed(3);
-        document.getElementById("position-y").textContent =
-          currentPosition.y.toFixed(3);
+        const speedText = speedMode === "rapid" ? "RAPID" : "WORK";
+        showMessage(`Ruch: ${moveText} mm w trybie ${speedText}`);
       } else {
         showMessage(
           "Nie udało się wykonać ruchu: " + (data.message || "Nieznany błąd"),
@@ -204,12 +253,6 @@ function zeroAxes() {
     .then((data) => {
       if (data.success) {
         showMessage("Pozycja wyzerowana");
-
-        // Aktualizuj pozycję lokalnie
-        currentPosition.x = 0;
-        currentPosition.y = 0;
-        document.getElementById("position-x").textContent = "0.000";
-        document.getElementById("position-y").textContent = "0.000";
       } else {
         showMessage(
           "Nie udało się wyzerować pozycji: " +
@@ -364,35 +407,19 @@ function handleKeyboardControl(event) {
   switch (event.key) {
     case "ArrowUp":
       event.preventDefault();
-      if (event.shiftKey) {
-        jog(0, 10); // Dalszy ruch gdy Shift jest wciśnięty
-      } else {
-        jog(0, 1);
-      }
+      jog(0, 1);
       break;
     case "ArrowDown":
       event.preventDefault();
-      if (event.shiftKey) {
-        jog(0, -10);
-      } else {
-        jog(0, -1);
-      }
+      jog(0, -1);
       break;
     case "ArrowLeft":
       event.preventDefault();
-      if (event.shiftKey) {
-        jog(-10, 0);
-      } else {
-        jog(-1, 0);
-      }
+      jog(-1, 0);
       break;
     case "ArrowRight":
       event.preventDefault();
-      if (event.shiftKey) {
-        jog(10, 0);
-      } else {
-        jog(1, 0);
-      }
+      jog(1, 0);
       break;
     case "Home":
       event.preventDefault();
@@ -401,14 +428,6 @@ function handleKeyboardControl(event) {
     case "End":
       event.preventDefault();
       zeroAxes();
-      break;
-    case "PageUp":
-      event.preventDefault();
-      selectNextDistance(1); // Zwiększ odległość
-      break;
-    case "PageDown":
-      event.preventDefault();
-      selectNextDistance(-1); // Zmniejsz odległość
       break;
     case "w":
     case "W":
@@ -425,60 +444,6 @@ function handleKeyboardControl(event) {
       toggleFan();
       break;
   }
-}
-
-/**
- * Funkcja do przełączania odległości ruchu
- */
-function selectNextDistance(direction) {
-  const distanceRadios = document.querySelectorAll('input[name="jogDistance"]');
-  const currentRadio = document.querySelector(
-    'input[name="jogDistance"]:checked'
-  );
-
-  if (!currentRadio) return;
-
-  let currentIndex = Array.from(distanceRadios).indexOf(currentRadio);
-  let nextIndex = currentIndex + direction;
-
-  // Zapętl indeks, jeśli wychodzi poza zakres
-  if (nextIndex < 0) nextIndex = distanceRadios.length - 1;
-  if (nextIndex >= distanceRadios.length) nextIndex = 0;
-
-  // Zaznacz nowy radio button
-  distanceRadios[nextIndex].checked = true;
-
-  // Wyświetl komunikat
-  showMessage(
-    `Zmieniono odległość ruchu na ${distanceRadios[nextIndex].value} mm`
-  );
-}
-
-/**
- * Aktualizacja pozycji w interfejsie
- */
-function updatePositionDisplay() {
-  fetch("/api/position")
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error("Błąd pobierania pozycji");
-      }
-      return response.json();
-    })
-    .then((data) => {
-      if (data.x !== undefined && data.y !== undefined) {
-        currentPosition.x = parseFloat(data.x);
-        currentPosition.y = parseFloat(data.y);
-
-        document.getElementById("position-x").textContent =
-          currentPosition.x.toFixed(3);
-        document.getElementById("position-y").textContent =
-          currentPosition.y.toFixed(3);
-      }
-    })
-    .catch((error) => {
-      console.error("Błąd pobierania pozycji:", error);
-    });
 }
 
 /**
@@ -509,10 +474,4 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Obsługa klawiatury
   document.addEventListener("keydown", handleKeyboardControl);
-
-  // Aktualizacja pozycji na starcie
-  updatePositionDisplay();
-
-  // Okresowa aktualizacja pozycji (na wszelki wypadek, gdyby EventSource nie działał)
-  setInterval(updatePositionDisplay, 2000);
 });

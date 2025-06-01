@@ -3,12 +3,13 @@
 
 // ============================================================================
 // Enable debugging:
-#define DEBUG_CONTROL_TASK
-#define DEBUG_CNC_TASK
-#define DEBUG_SERVER_ROUTES
-#define DEBUG_SD
-#define DEBUG_WIFI
-#define DEBUG_CONFIG_MANAGER
+//#define DEBUG
+//#define DEBUG_CONTROL_TASK
+//#define DEBUG_CNC_TASK
+//#define DEBUG_SERVER_ROUTES
+//#define DEBUG_SD
+//#define DEBUG_WIFI
+//#define DEBUG_CONFIG_MANAGER
 
 
 namespace PINCONFIG {
@@ -43,12 +44,12 @@ namespace CONFIG {
     // Konfiguracja zadań
 
     // Rozmiar stosu zadań FreeRTOS
-    constexpr uint32_t CONTROLTASK_STACK_SIZE { 32768 }; // [bytes]
-    constexpr uint32_t CNCTASK_STACK_SIZE { 8192 }; // [bytes]
+    constexpr uint32_t CONTROLTASK_STACK_SIZE { 8192 }; // [bytes]
+    constexpr uint32_t CNCTASK_STACK_SIZE { 6144 }; // [bytes]
 
     // Priorytety zadań FreeRTOS
     constexpr uint8_t CONTROLTASK_PRIORITY { 1 }; // The priority at which the task should run
-    constexpr uint8_t CNCTASK_PRIORITY { 1 };
+    constexpr uint8_t CNCTASK_PRIORITY { 2 };
 
     // Pomocnicze do przypisania zadań do rdzeni ESP32
     constexpr BaseType_t CORE_0 { 0 };

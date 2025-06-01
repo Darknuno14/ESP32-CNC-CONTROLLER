@@ -71,29 +71,23 @@
 
       <!-- Sekcja główna -->
       <div class="row">
-        <!-- Lewa kolumna: Pozycja i status -->
+        <!-- Lewa kolumna: Status i sterowanie -->
         <div class="col-md-4">
           <div class="card mb-4">
             <div class="card-header">
-              <h2 class="h5 mb-0">Pozycja</h2>
+              <h2 class="h5 mb-0">Sterowanie Systemu</h2>
             </div>
             <div class="card-body">
-              <div class="position-display">
-                <div class="position-coordinates">
-                  <div>X: <span id="position-x">0.000</span> mm</div>
-                  <div>Y: <span id="position-y">0.000</span> mm</div>
-                </div>
-              </div>
               <div class="d-grid gap-2">
+                <button type="button" class="btn btn-info w-100" id="homeBtn">
+                  <i class="bi bi-house"></i> Bazuj Maszynę
+                </button>
                 <button
                   type="button"
-                  class="btn btn-warning w-100 mt-2"
+                  class="btn btn-warning w-100"
                   id="zeroBtn"
                 >
                   <i class="bi bi-geo"></i> Zeruj Pozycję
-                </button>
-                <button type="button" class="btn btn-info w-100" id="homeBtn">
-                  <i class="bi bi-house"></i> Bazuj Maszynę
                 </button>
               </div>
             </div>
@@ -134,6 +128,31 @@
               </div>
             </div>
           </div>
+
+          <div class="card mb-4">
+            <div class="card-header">
+              <h2 class="h5 mb-0">Status Bezpieczeństwa</h2>
+            </div>
+            <div class="card-body">
+              <div class="mb-2">
+                <span class="me-2">E-STOP:</span>
+                <div id="estop-status" class="status-indicator me-2"></div>
+                <span id="estop-status-text">Nieznany</span>
+              </div>
+              
+              <div class="mb-2">
+                <span class="me-2">Krańcówka X:</span>
+                <div id="limitx-status" class="status-indicator me-2"></div>
+                <span id="limitx-status-text">Nieznany</span>
+              </div>
+              
+              <div class="mb-2">
+                <span class="me-2">Krańcówka Y:</span>
+                <div id="limity-status" class="status-indicator me-2"></div>
+                <span id="limity-status-text">Nieznany</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Prawa kolumna: Sterowanie JOG -->
@@ -143,105 +162,63 @@
               <h2 class="h5 mb-0">Sterowanie JOG</h2>
             </div>
             <div class="card-body">
-              <!-- Wybór odległości JOG -->
+              <!-- Odległość JOG -->
               <div class="mb-3">
-                <label class="form-label">Odległość ruchu (mm)</label>
-                <div class="btn-group jog-distance-select" role="group">
-                  <input
-                    type="radio"
-                    class="btn-check"
-                    name="jogDistance"
-                    id="jogDistance0.1"
-                    value="0.1"
-                    checked
-                  />
-                  <label class="btn btn-outline-primary" for="jogDistance0.1"
-                    >0.1</label
-                  >
-
-                  <input
-                    type="radio"
-                    class="btn-check"
-                    name="jogDistance"
-                    id="jogDistance1"
-                    value="1"
-                  />
-                  <label class="btn btn-outline-primary" for="jogDistance1"
-                    >1</label
-                  >
-
-                  <input
-                    type="radio"
-                    class="btn-check"
-                    name="jogDistance"
-                    id="jogDistance5"
-                    value="5"
-                  />
-                  <label class="btn btn-outline-primary" for="jogDistance5"
-                    >5</label
-                  >
-
-                  <input
-                    type="radio"
-                    class="btn-check"
-                    name="jogDistance"
-                    id="jogDistance10"
-                    value="10"
-                  />
-                  <label class="btn btn-outline-primary" for="jogDistance10"
-                    >10</label
-                  >
-
-                  <input
-                    type="radio"
-                    class="btn-check"
-                    name="jogDistance"
-                    id="jogDistance50"
-                    value="50"
-                  />
-                  <label class="btn btn-outline-primary" for="jogDistance50"
-                    >50</label
-                  >
-                </div>
+                <label for="jogDistance" class="form-label">Odległość ruchu (mm)</label>
+                <input
+                  type="number"
+                  class="form-control"
+                  id="jogDistance"
+                  value="10"
+                  min="0.1"
+                  max="100"
+                  step="0.1"
+                  placeholder="Wprowadź odległość"
+                />
               </div>
 
               <!-- Wybór prędkości JOG -->
               <div class="mb-3">
-                <label for="jogSpeed" class="form-label"
-                  >Prędkość ruchu (mm/min)</label
-                >
-                <select class="form-select" id="jogSpeed">
-                  <option value="500">Wolna (500 mm/min)</option>
-                  <option value="1000" selected>Średnia (1000 mm/min)</option>
-                  <option value="3000">Szybka (3000 mm/min)</option>
-                  <option value="5000">Bardzo szybka (5000 mm/min)</option>
-                </select>
+                <label class="form-label">Tryb prędkości</label>
+                <div class="btn-group w-100" role="group">
+                  <input
+                    type="radio"
+                    class="btn-check"
+                    name="jogSpeedMode"
+                    id="speedModeWork"
+                    value="work"
+                    checked
+                  />
+                  <label class="btn btn-outline-primary" for="speedModeWork">
+                    <i class="bi bi-gear"></i> WORK
+                  </label>
+
+                  <input
+                    type="radio"
+                    class="btn-check"
+                    name="jogSpeedMode"
+                    id="speedModeRapid"
+                    value="rapid"
+                  />
+                  <label class="btn btn-outline-success" for="speedModeRapid">
+                    <i class="bi bi-lightning"></i> RAPID
+                  </label>
+                </div>
               </div>
 
               <!-- Przyciski sterowania JOG -->
               <div class="jog-container">
                 <div class="jog-row">
-                  <button
-                    class="btn btn-primary jog-button"
-                    data-x="-1"
-                    data-y="1"
-                  >
-                    <i class="bi bi-arrow-up-left"></i>
-                  </button>
+                  <div></div>
                   <button
                     class="btn btn-primary jog-button"
                     data-x="0"
                     data-y="1"
                   >
                     <i class="bi bi-arrow-up"></i>
+                    <br><small>Y+</small>
                   </button>
-                  <button
-                    class="btn btn-primary jog-button"
-                    data-x="1"
-                    data-y="1"
-                  >
-                    <i class="bi bi-arrow-up-right"></i>
-                  </button>
+                  <div></div>
                 </div>
                 <div class="jog-row">
                   <button
@@ -250,9 +227,11 @@
                     data-y="0"
                   >
                     <i class="bi bi-arrow-left"></i>
+                    <br><small>X-</small>
                   </button>
                   <button class="btn btn-secondary jog-button jog-center">
                     <i class="bi bi-plus"></i>
+                    <br><small>HOME</small>
                   </button>
                   <button
                     class="btn btn-primary jog-button"
@@ -260,30 +239,20 @@
                     data-y="0"
                   >
                     <i class="bi bi-arrow-right"></i>
+                    <br><small>X+</small>
                   </button>
                 </div>
                 <div class="jog-row">
-                  <button
-                    class="btn btn-primary jog-button"
-                    data-x="-1"
-                    data-y="-1"
-                  >
-                    <i class="bi bi-arrow-down-left"></i>
-                  </button>
+                  <div></div>
                   <button
                     class="btn btn-primary jog-button"
                     data-x="0"
                     data-y="-1"
                   >
                     <i class="bi bi-arrow-down"></i>
+                    <br><small>Y-</small>
                   </button>
-                  <button
-                    class="btn btn-primary jog-button"
-                    data-x="1"
-                    data-y="-1"
-                  >
-                    <i class="bi bi-arrow-down-right"></i>
-                  </button>
+                  <div></div>
                 </div>
               </div>
 
@@ -295,7 +264,6 @@
                 </p>
                 <ul class="mb-0">
                   <li>Strzałki: Ruch osiami X/Y</li>
-                  <li>Page Up/Down: Zmiana odległości ruchu</li>
                   <li>Home: Bazowanie maszyny</li>
                   <li>End: Zerowanie pozycji</li>
                   <li>W: Włącz/wyłącz drut grzejny</li>
