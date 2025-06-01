@@ -1,3 +1,10 @@
+// ================================================================================
+//                           MENADŻER SERWERA WEB
+// ================================================================================
+// Obsługa serwera HTTP dla interfejsu webowego kontrolera CNC
+// Zarządzanie endpointów API, plików statycznych oraz komunikacji real-time
+// Thread-safe obsługa żądań JSON i przesyłania plików
+
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <AsyncTCP.h>
@@ -7,17 +14,23 @@
 #include "WebServerManager.h"
 #include "CONFIGURATION.H"
 
+// ================================================================================
+//                           KONSTRUKTOR I DESTRUKTOR
+// ================================================================================
+
 WebServerManager::WebServerManager(SDCardManager* sdManager, ConfigManager* configManager, QueueHandle_t extCommandQueue, QueueHandle_t extStateQueue)
     : sdManager(sdManager), configManager(configManager), commandQueue(extCommandQueue), stateQueue(extStateQueue) {
 }
 
 WebServerManager::~WebServerManager() {
+    // Zwolnienie zasobów Server-Sent Events
     if (events) {
         eventsInitialized = false;
         delete events;
         events = nullptr;
     }
 
+    // Zwolnienie zasobów serwera HTTP
     if (server) {
         serverInitialized = false;
         serverStarted = false;
@@ -26,20 +39,24 @@ WebServerManager::~WebServerManager() {
     }
 }
 
+// ================================================================================
+//                            INICJALIZACJA SYSTEMU
+// ================================================================================
+
 WebServerStatus WebServerManager::init() {
-    // If already initialized, return already initialized status
+    // Sprawdzenie czy serwer nie jest już zainicjalizowany
     if (server != nullptr) {
         return WebServerStatus::ALREADY_INITIALIZED;
     }
 
-    // Allocate memory for the web server
+    // Alokacja pamięci dla serwera HTTP na porcie 80
     server = new AsyncWebServer(80);
     if (server == nullptr) {
         return WebServerStatus::SERVER_ALLOCATION_FAILED;
     }
     this->serverInitialized = true;
 
-    // Allocate memory for the event source if not already done
+    // Alokacja pamięci dla Server-Sent Events (komunikacja real-time)
     if (!events) {
         events = new AsyncEventSource("/events");
         if (events == nullptr) {
@@ -50,6 +67,7 @@ WebServerStatus WebServerManager::init() {
         this->eventsInitialized = true;
     }
 
+    // Konfiguracja obsługi ponownych połączeń klientów
     events->onConnect([](AsyncEventSourceClient* client) {
         if (client->lastId()) {
             Serial.printf("Client reconnected! Last message ID: %u\n", client->lastId());
@@ -63,50 +81,58 @@ WebServerStatus WebServerManager::init() {
 }
 
 WebServerStatus WebServerManager::begin() {
-
+    // Walidacja stanu inicjalizacji
     if (server == nullptr) {
         return WebServerStatus::NOT_INITIALIZED;
     }
 
+    // Rejestracja handlera dla Server-Sent Events
     server->addHandler(events);
+    
+    // Konfiguracja wszystkich endpointów API i plików statycznych
     setupRoutes();
 
-
-
+    // Uruchomienie nasłuchiwania na porcie 80
     server->begin();
     this->serverStarted = true;
 
     return WebServerStatus::OK;
 }
 
+// ================================================================================
+//                          KONFIGURACJA ROUTINGU
+// ================================================================================
+
 void WebServerManager::setupRoutes() {
     if (server == nullptr) return;
 
+    // Konfiguracja poszczególnych grup endpointów
     setupCommonRoutes();
     setupIndexRoutes();
     setupConfigRoutes();
     setupJogRoutes();
     setupProjectsRoutes();
 
+    // Serwowanie plików CSS z optymalizacją cache i kompresją gzip
     if (LittleFS.exists("/css/styles.css")) {
         server->serveStatic("/css/", LittleFS, "/css/")
             .setCacheControl("max-age=86400")
             .setTryGzipFirst(true);
     }
 
-    // Serve JavaScript files (z większym bezpieczeństwem)
+    // Serwowanie plików JavaScript z optymalizacją
     if (LittleFS.exists("/js/")) {
         server->serveStatic("/js/", LittleFS, "/js/")
             .setCacheControl("max-age=86400")
             .setTryGzipFirst(true);
     }
 
-    // Serve HTML and other files from root
+    // Serwowanie plików HTML i innych zasobów
     server->serveStatic("/", LittleFS, "/")
         .setDefaultFile("index.html")
         .setTryGzipFirst(true);
 
-    // Brak strony
+    // Handler dla nieistniejących stron (404)
     server->onNotFound([](AsyncWebServerRequest* request) {
         Serial.printf("404 Not Found: %s (Method: %s)\n",
             request->url().c_str(),
@@ -115,22 +141,25 @@ void WebServerManager::setupRoutes() {
         });
 }
 
-void WebServerManager::setupCommonRoutes() {
+// ================================================================================
+//                         ENDPOINTY WSPÓLNE SYSTEMU
+// ================================================================================
 
-    // Status karty SD
+void WebServerManager::setupCommonRoutes() {
+    // Status karty SD - sprawdzenie dostępności
     server->on("/api/sd-status", HTTP_GET, [this](AsyncWebServerRequest* request) {
         String json = "{\"initialized\":" + String(this->sdManager->isCardInitialized() ? "true" : "false") + "}";
         request->send(200, "application/json", json);
         });
 
 
-    // Reinicjalizacja karty SD i ConfigManager
+    // Reinicjalizacja karty SD i ConfigManagera - procedura odzyskiwania
     server->on("/api/reinitialize-sd", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: SD card reinitialization requested");
         #endif
 
-        // Najpierw zainicjalizuj kartę SD
+        // Inicjalizacja karty SD z walidacją wyniku
         SDManagerStatus sdResult = this->sdManager->init();
         bool sdSuccess = (sdResult == SDManagerStatus::OK);
 
@@ -142,7 +171,7 @@ void WebServerManager::setupCommonRoutes() {
             Serial.println("DEBUG SERVER STATUS: SD card reinitialization successful");
             #endif
 
-            // Następnie zainicjalizuj/reinicjalizuj ConfigManager
+            // Reinicjalizacja ConfigManagera z istniejącym SD Managerem
             if (this->configManager) {
                 ConfigManagerStatus configResult = this->configManager->init();
                 configSuccess = (configResult == ConfigManagerStatus::OK);
@@ -161,7 +190,7 @@ void WebServerManager::setupCommonRoutes() {
                 }
             }
             else {
-                // Jeśli configManager nie istnieje, stwórz nowy
+                // Tworzenie nowego ConfigManagera jeśli nie istnieje
                 #ifdef DEBUG_SERVER_ROUTES
                 Serial.println("DEBUG SERVER WARNING: Creating new Config manager");
                 #endif
@@ -177,14 +206,14 @@ void WebServerManager::setupCommonRoutes() {
                 }
             }
 
-            // Zaktualizuj listę projektów
+            // Aktualizacja listy projektów po pomyślnej reinicjalizacji
             this->sdManager->updateProjectList();
         }
         else {
             message = "Failed to reinitialize SD card";
         }
 
-        // Odpowiedź JSON ze szczegółowymi informacjami
+        // Odpowiedź JSON ze szczegółowymi informacjami o statusie operacji
         JsonDocument doc {};
         doc["success"] = sdSuccess;
         doc["configSuccess"] = configSuccess;
@@ -197,20 +226,24 @@ void WebServerManager::setupCommonRoutes() {
 
 }
 
+// ================================================================================
+//                         ENDPOINTY STRONY GŁÓWNEJ
+// ================================================================================
+
 void WebServerManager::setupIndexRoutes() {
-    // Przycisk START
+    // Przycisk START - rozpoczęcie wykonywania programu G-code
     server->on("/api/start", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: Komenda START");
         #endif
 
-        // Zamiast flagi, wysyłamy komendę START przez kolejkę
+        // Wysłanie komendy START przez kolejkę FreeRTOS
         this->sendCommand(CommandType::START);
 
         request->send(200, "application/json", "{\"success\":true}");
         });
 
-    // Przycisk PAUSE
+    // Przycisk PAUSE - wstrzymanie wykonywania programu
     server->on("/api/pause", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: Komenda PAUSE");
@@ -221,7 +254,7 @@ void WebServerManager::setupIndexRoutes() {
         request->send(200, "application/json", "{\"success\":true}");
         });
 
-    // Przycisk STOP
+    // Przycisk STOP - zatrzymanie wykonywania programu
     server->on("/api/stop", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: Komenda STOP");
@@ -232,18 +265,22 @@ void WebServerManager::setupIndexRoutes() {
         request->send(200, "application/json", "{\"success\":true}");
         });
 
-    // Przycisk RESET (powrót do IDLE z stanów STOPPED/ERROR)
+    // Przycisk RESET - powrót do stanu IDLE z błędów i zatrzymania
     server->on("/api/reset", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: Komenda RESET");
         #endif
 
-        // RESET używa tej samej komendy co STOP - w stanie STOPPED/ERROR komenda STOP resetuje do IDLE
+        // RESET wykorzystuje komendę STOP - w stanach STOPPED/ERROR resetuje do IDLE
         this->sendCommand(CommandType::STOP);
 
         request->send(200, "application/json", "{\"success\":true}");
         });
 }
+
+// ================================================================================
+//                         ENDPOINTY ZARZĄDZANIA KONFIGURACJĄ
+// ================================================================================
 
 void WebServerManager::setupConfigRoutes() {
     // Pobieranie konfiguracji
@@ -331,8 +368,12 @@ void WebServerManager::setupConfigRoutes() {
         });
 }
 
+// ================================================================================
+//                         ENDPOINTY STEROWANIA JOG
+// ================================================================================
+
 void WebServerManager::setupJogRoutes() {
-    // Endpoint do sterowania ruchem JOG
+    // Sterowanie ruchem ręcznym (JOG) z kontrolą prędkości
     server->on("/api/jog", HTTP_POST,
         [](AsyncWebServerRequest* request) {
             request->send(200, "text/plain", "Processing JOG request...");
@@ -353,7 +394,7 @@ void WebServerManager::setupJogRoutes() {
                     return;
                 }
 
-                // Sprawdź, czy wymagane parametry istnieją
+                // Walidacja parametrów ruchu JOG (x, y, tryb prędkości)
                 if (!doc["x"].is<float>() || !doc["y"].is<float>() || !doc["speedMode"].is<const char*>()) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing parameters\"}");
                     return;
@@ -363,8 +404,8 @@ void WebServerManager::setupJogRoutes() {
                 float y = doc["y"].as<float>();
                 String speedMode = doc["speedMode"].as<String>();
 
-                // Konwertuj tryb prędkości na wartość numeryczną
-                // 0.0 = WORK mode, 1.0 = RAPID mode
+                // Konwersja trybu prędkości na wartość numeryczną dla kontrolera
+                // 0.0 = WORK mode (praca), 1.0 = RAPID mode (szybki)
                 float speedValue = (speedMode == "rapid") ? 1.0f : 0.0f;
 
                 #ifdef DEBUG_SERVER_ROUTES
@@ -372,7 +413,7 @@ void WebServerManager::setupJogRoutes() {
                     x, y, speedMode.c_str(), speedValue);
                 #endif
 
-                // Wyślij komendę JOG przez kolejkę
+                // Przekazanie komendy JOG do kontrolera przez kolejkę FreeRTOS
                 this->sendCommand(CommandType::JOG, x, y, speedValue);
 
                 request->send(200, "application/json", "{\"success\":true}");
@@ -380,7 +421,7 @@ void WebServerManager::setupJogRoutes() {
         }
     );
 
-    // Endpoint do sterowania drutem grzejnym
+    // Endpoint kontroli drutu grzejnego - włączanie/wyłączanie
     server->on("/api/wire", HTTP_POST,
         [](AsyncWebServerRequest* request) {
             request->send(200, "text/plain", "Processing wire request...");
@@ -401,7 +442,7 @@ void WebServerManager::setupJogRoutes() {
                     return;
                 }
 
-                // Sprawdź, czy parametr state istnieje
+                // Walidacja parametru stanu drutu grzejnego
                 if (!doc["state"].is<bool>()) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing state parameter\"}");
                     return;
@@ -413,7 +454,7 @@ void WebServerManager::setupJogRoutes() {
                 Serial.printf("DEBUG SERVER STATUS: Wire control: %s\n", state ? "ON" : "OFF");
                 #endif
 
-                // Wyślij komendę sterowania drutem przez kolejkę
+                // Przekazanie komendy kontroli drutu do kontrolera przez kolejkę
                 this->sendCommand(CommandType::SET_HOTWIRE, state ? 1.0f : 0.0f, 0.0f, 0.0f);
 
                 request->send(200, "application/json", "{\"success\":true}");
@@ -421,7 +462,7 @@ void WebServerManager::setupJogRoutes() {
         }
     );
 
-    // Endpoint do sterowania wentylatorem
+    // Endpoint kontroli wentylatora - włączanie/wyłączanie
     server->on("/api/fan", HTTP_POST,
         [](AsyncWebServerRequest* request) {
             request->send(200, "text/plain", "Processing fan request...");
@@ -442,7 +483,7 @@ void WebServerManager::setupJogRoutes() {
                     return;
                 }
 
-                // Sprawdź, czy parametr state istnieje
+                // Walidacja parametru stanu wentylatora
                 if (!doc["state"].is<bool>()) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing state parameter\"}");
                     return;
@@ -454,7 +495,7 @@ void WebServerManager::setupJogRoutes() {
                 Serial.printf("DEBUG SERVER STATUS: Fan control: %s\n", state ? "ON" : "OFF");
                 #endif
 
-                // Wyślij komendę sterowania wentylatorem przez kolejkę
+                // Przekazanie komendy kontroli wentylatora do kontrolera przez kolejkę
                 this->sendCommand(CommandType::SET_FAN, state ? 1.0f : 0.0f, 0.0f, 0.0f);
 
                 request->send(200, "application/json", "{\"success\":true}");
@@ -462,39 +503,47 @@ void WebServerManager::setupJogRoutes() {
         }
     );
 
-    // Endpoint do bazowania maszyny
+// ================================================================================
+//                         ENDPOINTY STEROWANIA JOG
+// ================================================================================
+
+    // Bazowanie maszyny do pozycji home
     server->on("/api/home", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: Home command requested");
         #endif
 
-        // Wyślij komendę bazowania przez kolejkę
+        // Przekazanie komendy bazowania do kontrolera CNC
         this->sendCommand(CommandType::HOME);
 
         request->send(200, "application/json", "{\"success\":true}");
         });
 
-    // Endpoint do zerowania pozycji
+    // Zerowanie pozycji układu współrzędnych
     server->on("/api/zero", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: Zero command requested");
         #endif
 
-        // Wyślij komendę zerowania przez kolejkę
+        // Ustawienie bieżącej pozycji jako punkt zero
         this->sendCommand(CommandType::ZERO);
 
         request->send(200, "application/json", "{\"success\":true}");
         });
 }
 
+// ================================================================================
+//                        ENDPOINTY ZARZĄDZANIA PROJEKTAMI
+// ================================================================================
+
 void WebServerManager::setupProjectsRoutes() {
 
+    // Pobieranie zawartości pliku G-code z karty SD
     server->on("/api/sd_content", HTTP_GET, [this](AsyncWebServerRequest* request) {
         if (!request->hasParam("file")) {
             request->send(400, "application/json", "{\"success\":false,\"message\":\"Missing file parameter\"}");
             return;
         }
-
 
         String filename = request->getParam("file")->value();
         String filePath = String(CONFIG::PROJECTS_DIR) + filename;
@@ -503,6 +552,7 @@ void WebServerManager::setupProjectsRoutes() {
         Serial.printf("DEBUG SERVER: Requested SD file content: %s\n", filename.c_str());
         #endif
 
+        // Synchronizacja dostępu do karty SD przez mutex
         if (!this->sdManager->takeSD()) {
             request->send(503, "application/json", "{\"error\":\"SD busy\"}");
             return;
@@ -518,6 +568,7 @@ void WebServerManager::setupProjectsRoutes() {
         AsyncWebServerResponse* response = request->beginResponse(SD, filePath, "text/plain");
         response->addHeader("Cache-Control", "no-cache");
 
+        // Cleanup po zakończeniu transmisji pliku
         request->onDisconnect([this]() {
             this->busy = false;
             this->sdManager->giveSD();
@@ -526,7 +577,7 @@ void WebServerManager::setupProjectsRoutes() {
         request->send(response);
         });
 
-    // Lista plików
+    // Listowanie dostępnych plików projektów G-code
     server->on("/api/list-files", HTTP_GET, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: File list requested");
@@ -557,6 +608,7 @@ void WebServerManager::setupProjectsRoutes() {
             return;
         }
 
+        // Budowanie odpowiedzi JSON z listą plików
         String json = "[";
         for (size_t i { 0 }; i < files.size(); ++i) {
             if (i > 0) json += ",";
@@ -567,7 +619,7 @@ void WebServerManager::setupProjectsRoutes() {
         request->send(200, "application/json", "{\"success\":true,\"message\":\"Files retrieved successfully\",\"files\":" + json + "}");
         });
 
-    // Wysyłanie pliku
+    // Upload pliku G-code na kartę SD
     server->on("/api/upload-file", HTTP_POST,
         [](AsyncWebServerRequest* request) {
             request->send(200, "application/json", "{\"success\":true,\"message\":\"Upload complete\"}");
@@ -580,6 +632,7 @@ void WebServerManager::setupProjectsRoutes() {
                 Serial.println("DEBUG SERVER STATUS: Starting upload of " + String(filename.c_str()));
                 #endif
 
+                // Bezpieczny dostęp do karty SD przez mutex
                 if (!this->sdManager->takeSD()) {
                     request->send(500, "application/json", "{\"success\":false,\"message\":\"Failed to access SD card\"}");
                     return;
@@ -600,13 +653,14 @@ void WebServerManager::setupProjectsRoutes() {
                 if (final) {
                     uploadFile.close();
                     this->sdManager->giveSD();
+                    // Aktualizacja listy po pomyślnym uploadzie
                     this->sdManager->updateProjectList();
                 }
             }
         }
     );
 
-    // Odświeżanie listy plików
+    // Odświeżanie listy plików po zmianach zewnętrznych
     server->on("/api/refresh-files", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: File list refresh requested");
@@ -624,7 +678,7 @@ void WebServerManager::setupProjectsRoutes() {
         request->send(success ? 200 : 500, "application/json", response);
         });
 
-    // Wybór pliku
+    // Wybór pliku projektu do wykonania
     server->on("/api/select-file", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: File selection requested");
@@ -640,6 +694,7 @@ void WebServerManager::setupProjectsRoutes() {
         Serial.printf("DEBUG SERVER STATUS: Selected file: %s\n", filename.c_str());
         #endif
 
+        // Ustawienie aktywnego projektu w menadżerze SD
         SDManagerStatus status = this->sdManager->setSelectedProject(filename);
         bool success = (status == SDManagerStatus::OK);
 
@@ -655,7 +710,7 @@ void WebServerManager::setupProjectsRoutes() {
         request->send(success ? 200 : 400, "application/json", response);
         });
 
-    // Usuwanie plików
+    // Usuwanie pliku projektu z karty SD
     server->on("/api/delete-file", HTTP_POST, [this](AsyncWebServerRequest* request) {
         #ifdef DEBUG_SERVER_ROUTES
         Serial.println("DEBUG SERVER STATUS: File deletion requested");
@@ -673,11 +728,13 @@ void WebServerManager::setupProjectsRoutes() {
         Serial.printf("DEBUG SERVER STATUS: Deleting file: %s\n", filePath.c_str());
         #endif
 
+        // Bezpieczne usuwanie z synchronizacją dostępu do SD
         if (this->sdManager->takeSD()) {
             bool success = SD.remove(filePath.c_str());
             this->sdManager->giveSD();
 
             if (success) {
+                // Aktualizacja listy po pomyślnym usunięciu
                 this->sdManager->updateProjectList();
                 request->send(200, "application/json", "{\"success\":true}");
             }
@@ -692,6 +749,10 @@ void WebServerManager::setupProjectsRoutes() {
 
 }
 
+// ================================================================================
+//                            FUNKCJE POMOCNICZE
+// ================================================================================
+
 bool WebServerManager::isServerStarted() {
     return serverStarted;
 }
@@ -704,6 +765,7 @@ bool WebServerManager::isServerInitialized() {
     return serverInitialized;
 }
 
+// Przekazywanie komend do kontrolera CNC przez kolejkę FreeRTOS
 void WebServerManager::sendCommand(CommandType type, float param1, float param2, float param3) {
     if (commandQueue) {
         WebserverCommand cmd {};
@@ -712,6 +774,7 @@ void WebServerManager::sendCommand(CommandType type, float param1, float param2,
         cmd.param2 = param2;
         cmd.param3 = param3;
 
+        // Nieblokujące wysłanie komendy (czas oczekiwania = 0)
         xQueueSend(commandQueue, &cmd, 0);
 
         #ifdef DEBUG_SERVER_ROUTES
@@ -721,11 +784,12 @@ void WebServerManager::sendCommand(CommandType type, float param1, float param2,
     }
 }
 
+// Wysyłanie statusu maszyny do klientów przez Server-Sent Events
 void WebServerManager::broadcastMachineStatus(MachineState currentState) {
 
     if (!events || !eventsInitialized) return;
 
-    // Sprawdź czy są połączeni klienci
+    // Optymalizacja - sprawdzenie czy są aktywni klienci
     if (events->count() == 0) {
         return;
     }
@@ -735,7 +799,7 @@ void WebServerManager::broadcastMachineStatus(MachineState currentState) {
     static MachineState lastSentState {};
     static bool firstSend = true;
 
-    // Porównaj kluczowe pola stanu
+    // Inteligentne porównanie stanu - wysyłaj tylko przy zmianach
     bool stateChanged = firstSend ||
         lastSentState.state != currentState.state ||
         lastSentState.isPaused != currentState.isPaused ||
@@ -750,6 +814,7 @@ void WebServerManager::broadcastMachineStatus(MachineState currentState) {
         return; // Nie wysyłaj jeśli stan się nie zmienił
     }
 
+    // Budowanie JSON odpowiedzi ze stanem maszyny
     JsonDocument doc;
     doc["state"] = static_cast<int>(currentState.state);
     doc["isPaused"] = currentState.isPaused;
@@ -771,7 +836,7 @@ void WebServerManager::broadcastMachineStatus(MachineState currentState) {
     doc["limitXOn"] = currentState.limitXOn;
     doc["limitYOn"] = currentState.limitYOn;
 
-    // Serialize directly to fixed buffer
+    // Serializacja do bufora o stałym rozmiarze z kontrolą przepełnienia
     size_t len = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
     if (len < sizeof(jsonBuffer)) {
         sendEvent("machine-status", jsonBuffer);
@@ -780,6 +845,7 @@ void WebServerManager::broadcastMachineStatus(MachineState currentState) {
     firstSend = false;
 }
 
+// Wysyłanie eventów Server-Sent Events do wszystkich połączonych klientów
 void WebServerManager::sendEvent(const char* event, const char* data) {
     if (events && eventsInitialized && event && data) {
         events->send(data, event, millis());
@@ -790,6 +856,7 @@ bool WebServerManager::isBusy() {
     return this->busy;
 }
 
+// Przetwarzanie dużych żądań JSON z buforowaniem w pamięci
 bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_t* data, size_t len,
     size_t index, size_t total, size_t bufferSize,
     std::function<void(const String&)> processor) {
@@ -797,6 +864,7 @@ bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_
     static size_t bufferPos = 0;
     static size_t currentBufferSize = 0;
 
+    // Inicjalizacja bufora przy pierwszym fragmencie
     if (index == 0) {
         if (jsonBuffer) free(jsonBuffer);
         jsonBuffer = (char*)malloc(bufferSize);
@@ -810,6 +878,7 @@ bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_
         memset(jsonBuffer, 0, bufferSize);
     }
 
+    // Kontrola przepełnienia bufora
     if (bufferPos + len >= currentBufferSize) {
         if (jsonBuffer) free(jsonBuffer);
         jsonBuffer = nullptr;
@@ -817,9 +886,11 @@ bool WebServerManager::processJsonRequest(AsyncWebServerRequest* request, uint8_
         return false;
     }
 
+    // Kopiowanie fragmentu danych do bufora
     memcpy(jsonBuffer + bufferPos, data, len);
     bufferPos += len;
 
+    // Przetwarzanie kompletnego JSON po otrzymaniu ostatniego fragmentu
     if (index + len == total) {
         jsonBuffer[bufferPos] = '\0';
         processor(String(jsonBuffer));

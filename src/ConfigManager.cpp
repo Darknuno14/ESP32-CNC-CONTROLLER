@@ -1,21 +1,38 @@
+// ================================================================================
+//                            MENADŻER KONFIGURACJI CNC
+// ================================================================================
+// Zarządzanie parametrami maszyny CNC z persystencją na karcie SD
+// Obsługuje ładowanie/zapisywanie konfiguracji w formacie JSON
+// Thread-safe dzięki mutexom FreeRTOS
+
 #include "ConfigManager.h"
 #include <SD.h>
 #include <ArduinoJson.h>
 #include "CONFIGURATION.H"
 
+// ================================================================================
+//                           KONSTRUKTOR I DESTRUKTOR
+// ================================================================================
+
 ConfigManager::ConfigManager(SDCardManager* sdManager) : sdManager(sdManager) {
+    // Mutex zapewnia bezpieczny dostęp do konfiguracji z wielu wątków
     configMutex = xSemaphoreCreateMutex();
 }
 
 ConfigManager::~ConfigManager() {
+    // Zwolnienie zasobów FreeRTOS
     if (configMutex != nullptr) {
         vSemaphoreDelete(configMutex);
         configMutex = nullptr;
     }
 }
 
-ConfigManagerStatus ConfigManager::init() {
+// ================================================================================
+//                            INICJALIZACJA SYSTEMU
+// ================================================================================
 
+ConfigManagerStatus ConfigManager::init() {
+    // Sprawdzenie dostępności karty SD
     if (!sdManager || !sdManager->isCardInitialized()) {
         this->configInitialized = false;
         return ConfigManagerStatus::SD_ACCESS_ERROR;
@@ -24,7 +41,7 @@ ConfigManagerStatus ConfigManager::init() {
     constexpr int MAX_NUM_OF_TRIES { 5 };
     ConfigManagerStatus status {};
 
-    // Próba wczytania domyślnej konfiguracji
+    // Próba wczytania konfiguracji z pliku - maksymalnie 5 prób
     for (int i { 0 }; i < MAX_NUM_OF_TRIES; ++i) {
         status = readConfigFromSD();
         if (status == ConfigManagerStatus::OK) {
@@ -36,6 +53,7 @@ ConfigManagerStatus ConfigManager::init() {
         }
     }
 
+    // Fallback - użycie domyślnej konfiguracji jeśli plik niedostępny
     status = loadDefaultConfig();
     if (status == ConfigManagerStatus::OK) {
         #ifdef DEBUG_CONFIG_MANAGER
@@ -52,12 +70,17 @@ ConfigManagerStatus ConfigManager::init() {
     return status;
 }
 
-ConfigManagerStatus ConfigManager::readConfigFromSD() {
+// ================================================================================
+//                            OPERACJE NA PLIKACH SD
+// ================================================================================
 
+ConfigManagerStatus ConfigManager::readConfigFromSD() {
+    // Blokada dostępu do karty SD (thread-safe)
     if (!sdManager->takeSD()) {
         return ConfigManagerStatus::SD_ACCESS_ERROR;
     }
 
+    // Budowa ścieżki do pliku konfiguracji
     std::string configFilePath { CONFIG::CONFIG_DIR };
     configFilePath += CONFIG::CONFIG_FILE;
 
@@ -72,6 +95,7 @@ ConfigManagerStatus ConfigManager::readConfigFromSD() {
         return ConfigManagerStatus::FILE_OPEN_FAILED;
     }
 
+    // Wczytanie całego pliku do pamięci
     String jsonString = "";
     while (configFile.available()) {
         jsonString += (char)configFile.read();
@@ -80,11 +104,12 @@ ConfigManagerStatus ConfigManager::readConfigFromSD() {
     configFile.close();
     sdManager->giveSD();
 
+    // Parsowanie JSON i aktualizacja struktury konfiguracji
     return configFromJson(jsonString);
 }
 
 ConfigManagerStatus ConfigManager::writeConfigToSD() {
-
+    // Walidacja dostępności SD managera
     if (!sdManager) {
         #ifdef DEBUG_CONFIG_MANAGER
         Serial.println("ERROR: SD Manager is nullptr");
@@ -92,6 +117,7 @@ ConfigManagerStatus ConfigManager::writeConfigToSD() {
         return ConfigManagerStatus::SD_ACCESS_ERROR;
     }
 
+    // Blokada dostępu do karty SD
     if (!sdManager->takeSD()) {
         #ifdef DEBUG_CONFIG_MANAGER
         Serial.println("ERROR: Failed to take SD");
@@ -99,6 +125,7 @@ ConfigManagerStatus ConfigManager::writeConfigToSD() {
         return ConfigManagerStatus::SD_ACCESS_ERROR;
     }
 
+    // Budowa ścieżki do pliku konfiguracji
     std::string configFilePath { CONFIG::CONFIG_DIR };
     configFilePath += CONFIG::CONFIG_FILE;
 
@@ -111,8 +138,10 @@ ConfigManagerStatus ConfigManager::writeConfigToSD() {
         return ConfigManagerStatus::FILE_OPEN_FAILED;
     }
 
+    // Konwersja konfiguracji do formatu JSON
     String jsonString { configToJson() };
 
+    // Zapis JSON do pliku z walidacją
     if (configFile.print(jsonString) == 0) {
         configFile.close();
         sdManager->giveSD();
@@ -127,9 +156,14 @@ ConfigManagerStatus ConfigManager::writeConfigToSD() {
     return ConfigManagerStatus::OK;
 }
 
+// ================================================================================
+//                          ZARZĄDZANIE KONFIGURACJĄ
+// ================================================================================
+
 ConfigManagerStatus ConfigManager::loadDefaultConfig() {
+    // Thread-safe dostęp do struktury konfiguracji
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        // Parametry osi X
+        // Inicjalizacja parametrów osi X z wartości domyślnych
         config.X.stepsPerMM = DEFAULTS::X_STEPS_PER_MM;
         config.X.rapidFeedRate = DEFAULTS::X_RAPID_FEEDRATE;
         config.X.rapidAcceleration = DEFAULTS::X_RAPID_ACCELERATION;
@@ -137,7 +171,7 @@ ConfigManagerStatus ConfigManager::loadDefaultConfig() {
         config.X.workAcceleration = DEFAULTS::X_WORK_ACCELERATION;
         config.X.offset = DEFAULTS::X_OFFSET;
 
-        // Parametry osi Y
+        // Inicjalizacja parametrów osi Y z wartości domyślnych
         config.Y.stepsPerMM = DEFAULTS::Y_STEPS_PER_MM;
         config.Y.rapidFeedRate = DEFAULTS::Y_RAPID_FEEDRATE;
         config.Y.rapidAcceleration = DEFAULTS::Y_RAPID_ACCELERATION;
@@ -145,7 +179,7 @@ ConfigManagerStatus ConfigManager::loadDefaultConfig() {
         config.Y.workAcceleration = DEFAULTS::Y_WORK_ACCELERATION;
         config.Y.offset = DEFAULTS::Y_OFFSET;
 
-        // Pozostałe parametry
+        // Inicjalizacja parametrów systemowych
         config.useGCodeFeedRate = DEFAULTS::USE_GCODE_FEEDRATE;
         config.delayAfterStartup = DEFAULTS::DELAY_AFTER_STARTUP;
         config.deactivateESTOP = DEFAULTS::DEACTIVATE_ESTOP;
@@ -161,7 +195,7 @@ ConfigManagerStatus ConfigManager::loadDefaultConfig() {
 }
 
 ConfigManagerStatus ConfigManager::getConfig(MachineConfig& targetConfig) {
-
+    // Sprawdzenie czy konfiguracja została zainicjalizowana
     if (!configInitialized) {
         #ifdef DEBUG_CONFIG_MANAGER
         Serial.println("DEBUG CONFIG: Configuration not loaded, cannot copy to struct");
@@ -171,6 +205,7 @@ ConfigManagerStatus ConfigManager::getConfig(MachineConfig& targetConfig) {
 
     MachineConfig configcpy {};
 
+    // Thread-safe kopiowanie konfiguracji do struktury docelowej
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
         targetConfig = config;
         xSemaphoreGive(configMutex);
@@ -185,21 +220,28 @@ ConfigManagerStatus ConfigManager::getConfig(MachineConfig& targetConfig) {
 }
 
 ConfigManagerStatus ConfigManager::updateConfig(const MachineConfig& newConfig) {
+    // Atomowa aktualizacja całej konfiguracji
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
         config = newConfig;
         xSemaphoreGive(configMutex);
 
+        // Natychmiastowy zapis do pliku dla persystencji
         return writeConfigToSD();
     }
 
     return ConfigManagerStatus::UNKNOWN_ERROR;
 }
 
+// ================================================================================
+//                          KONWERSJA JSON ↔ KONFIGURACJA
+// ================================================================================
+
 String ConfigManager::configToJson() {
     JsonDocument doc {};
 
+    // Thread-safe serializacja konfiguracji do JSON
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        // Parametry osi X
+        // Budowa obiektu JSON dla osi X
         JsonObject xAxis = doc["xAxis"].to<JsonObject>();
         xAxis["stepsPerMM"] = config.X.stepsPerMM;
         xAxis["workFeedRate"] = config.X.workFeedRate;
@@ -208,7 +250,7 @@ String ConfigManager::configToJson() {
         xAxis["rapidAcceleration"] = config.X.rapidAcceleration;
         xAxis["offset"] = config.X.offset;
 
-        // Parametry osi Y
+        // Budowa obiektu JSON dla osi Y
         JsonObject yAxis = doc["yAxis"].to<JsonObject>();
         yAxis["stepsPerMM"] = config.Y.stepsPerMM;
         yAxis["workFeedRate"] = config.Y.workFeedRate;
@@ -217,7 +259,7 @@ String ConfigManager::configToJson() {
         yAxis["rapidAcceleration"] = config.Y.rapidAcceleration;
         yAxis["offset"] = config.Y.offset;
 
-        // Pozostałe parametry
+        // Parametry systemowe
         doc["useGCodeFeedRate"] = config.useGCodeFeedRate;
         doc["delayAfterStartup"] = config.delayAfterStartup;
         doc["deactivateESTOP"] = config.deactivateESTOP;
@@ -229,7 +271,7 @@ String ConfigManager::configToJson() {
         xSemaphoreGive(configMutex);
     }
 
-    // Serializuj dokument do stringa
+    // Konwersja dokumentu JSON na string
     String result;
     serializeJson(doc, result);
     return result;
@@ -238,6 +280,7 @@ String ConfigManager::configToJson() {
 ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
     JsonDocument doc {};
 
+    // Parsowanie JSON z walidacją błędów
     DeserializationError error = deserializeJson(doc, jsonString);
     if (error) {
         #ifdef DEBUG_CONFIG_MANAGER
@@ -247,8 +290,9 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
         return ConfigManagerStatus::JSON_PARSE_ERROR;
     }
 
+    // Thread-safe aktualizacja konfiguracji z JSON
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        // Parametry dla osi X
+        // Bezpieczne parsowanie parametrów osi X z walidacją typów
         if (doc["xAxis"].is<JsonObject>()) {
             JsonObject xAxis = doc["xAxis"];
             if (xAxis["stepsPerMM"].is<float>()) config.X.stepsPerMM = xAxis["stepsPerMM"].as<float>();
@@ -259,7 +303,7 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
             if (xAxis["offset"].is<float>()) config.X.offset = xAxis["offset"].as<float>();
         }
 
-        // Parametry dla osi Y
+        // Bezpieczne parsowanie parametrów osi Y z walidacją typów
         if (doc["yAxis"].is<JsonObject>()) {
             JsonObject yAxis = doc["yAxis"];
             if (yAxis["stepsPerMM"].is<float>()) config.Y.stepsPerMM = yAxis["stepsPerMM"].as<float>();
@@ -270,7 +314,7 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
             if (yAxis["offset"].is<float>()) config.Y.offset = yAxis["offset"].as<float>();
         }
 
-        // Pozostałe parametry
+        // Bezpieczne parsowanie parametrów systemowych z walidacją typów
         if (doc["useGCodeFeedRate"].is<bool>()) config.useGCodeFeedRate = doc["useGCodeFeedRate"].as<bool>();
         if (doc["delayAfterStartup"].is<int>()) config.delayAfterStartup = doc["delayAfterStartup"].as<int>();
         if (doc["deactivateESTOP"].is<bool>()) config.deactivateESTOP = doc["deactivateESTOP"].as<bool>();
@@ -291,14 +335,21 @@ ConfigManagerStatus ConfigManager::configFromJson(const String& jsonString) {
     return ConfigManagerStatus::UNKNOWN_ERROR;
 }
 
+// ================================================================================
+//                         AKTUALIZACJA POJEDYNCZYCH PARAMETRÓW
+// ================================================================================
+
 template<typename T>
 ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName, T value) {
+    // Auto-inicjalizacja jeśli potrzebna
     if (!configInitialized) {
         init();
     }
+    
+    // Thread-safe aktualizacja wybranego parametru
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        // Aktualizacja wybranego parametru
-        // Parametry osi X
+        // Mapowanie nazw parametrów na pola struktury konfiguracji
+        // Parametry kinematyki osi X
         if (paramName == "xAxis.stepsPerMM") config.X.stepsPerMM = static_cast<float>(value);
         else if (paramName == "xAxis.workFeedRate") config.X.workFeedRate = static_cast<float>(value);
         else if (paramName == "xAxis.workAcceleration") config.X.workAcceleration = static_cast<float>(value);
@@ -306,7 +357,7 @@ ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName,
         else if (paramName == "xAxis.rapidAcceleration") config.X.rapidAcceleration = static_cast<float>(value);
         else if (paramName == "xAxis.offset") config.X.offset = static_cast<float>(value);
 
-        // Parametry osi Y
+        // Parametry kinematyki osi Y
         else if (paramName == "yAxis.stepsPerMM") config.Y.stepsPerMM = static_cast<float>(value);
         else if (paramName == "yAxis.workFeedRate") config.Y.workFeedRate = static_cast<float>(value);
         else if (paramName == "yAxis.workAcceleration") config.Y.workAcceleration = static_cast<float>(value);
@@ -315,7 +366,7 @@ ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName,
         else if (paramName == "yAxis.offset") config.Y.offset = static_cast<float>(value);
 
 
-        // Pozostałe parametry
+        // Parametry systemowe maszyny
         else if (paramName == "useGCodeFeedRate") config.useGCodeFeedRate = static_cast<bool>(value);
         else if (paramName == "delayAfterStartup") config.delayAfterStartup = static_cast<int>(value);
         else if (paramName == "deactivateESTOP") config.deactivateESTOP = static_cast<bool>(value);
@@ -326,14 +377,17 @@ ConfigManagerStatus ConfigManager::updateParameter(const std::string& paramName,
 
         xSemaphoreGive(configMutex);
 
-        // Zapisz zaktualizowaną konfigurację
+        // Natychmiastowy zapis zmiany do pliku
         return writeConfigToSD();
     }
 
     return ConfigManagerStatus::UNKNOWN_ERROR;
 }
 
-// Jawne instancje szablonu dla typów, które będą używane
+// ================================================================================
+//                          JAWNE INSTANCJE SZABLONÓW
+// ================================================================================
+// Definicje dla kompilera - obsługiwane typy danych w updateParameter
 template ConfigManagerStatus ConfigManager::updateParameter<float>(const std::string& paramName, float value);
 template ConfigManagerStatus ConfigManager::updateParameter<int>(const std::string& paramName, int value);
 template ConfigManagerStatus ConfigManager::updateParameter<bool>(const std::string& paramName, bool value);
