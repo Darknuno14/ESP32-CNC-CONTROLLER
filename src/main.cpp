@@ -236,11 +236,13 @@ void taskCNC(void* parameter) {
         TickType_t currentTime { xTaskGetTickCount() };
         
         // Uwaga: multiStepper.run() jest teraz wywoływane w przerwaniu timera!
-        // Pozostawiamy logikę zatrzymywania silników w stanach STOPPED/ERROR
+        // W stanach STOPPED/ERROR musimy wyczyścić pozycje docelowe stepperów
         if (cncState.state == CNCState::STOPPED || cncState.state == CNCState::ERROR) {
-            // Jeśli maszyna jest w stanie STOPPED lub ERROR, zatrzymaj silniki
+            // Zatrzymaj silniki i wyczyść pozycje docelowe (ustaw cel = obecna pozycja)
             stepperX.stop();
             stepperY.stop();
+            stepperX.setCurrentPosition(stepperX.currentPosition());
+            stepperY.setCurrentPosition(stepperY.currentPosition());
         }
 
         // Odbieranie komend z kolejki
@@ -285,6 +287,12 @@ void taskCNC(void* parameter) {
             // Natychmiastowe zatrzymanie wszystkich operacji
             cncState.hotWireOn = false;
             cncState.fanOn = false;
+
+            // Zatrzymaj silniki i wyczyść pozycje docelowe
+            stepperX.stop();
+            stepperY.stop();
+            stepperX.setCurrentPosition(stepperX.currentPosition());
+            stepperY.setCurrentPosition(stepperY.currentPosition());
 
             // Zamknij pliki G-code jeśli otwarte
             if (gCodeState.fileOpen && gCodeState.currentFile) {
@@ -507,8 +515,11 @@ void taskCNC(void* parameter) {
             case CNCState::STOPPED:
             case CNCState::ERROR:
                 cncState.hotWireOn = false;
+                // Zatrzymaj silniki i wyczyść pozycje docelowe
                 stepperX.stop();
                 stepperY.stop();
+                stepperX.setCurrentPosition(stepperX.currentPosition());
+                stepperY.setCurrentPosition(stepperY.currentPosition());
 
                 break;
         }
@@ -1040,6 +1051,8 @@ void processGCode(MachineState& cncState, GCodeProcessingState& gCodeState, Mult
         // Natychmiastowe zatrzymanie
         stepperX.stop();
         stepperY.stop();
+        stepperX.setCurrentPosition(stepperX.currentPosition());
+        stepperY.setCurrentPosition(stepperY.currentPosition());
         cncState.hotWireOn = false;
         cncState.fanOn = false;
         gCodeState.stage = GCodeProcessingState::ProcessingStage::ERROR;
@@ -1429,6 +1442,8 @@ void processHoming(MachineState& cncState, HomingState& homingState, MultiSteppe
     if (cncState.estopOn) {
         stepperX.stop();
         stepperY.stop();
+        stepperX.setCurrentPosition(stepperX.currentPosition());
+        stepperY.setCurrentPosition(stepperY.currentPosition());
         homingState.stage = HomingState::HomingStage::ERROR;
         homingState.errorMessage = "ESTOP active during homing";
         return;
@@ -1489,6 +1504,10 @@ void processHoming(MachineState& cncState, HomingState& homingState, MultiSteppe
 
                 // Sprawdź timeout (zabezpieczenie przed nieskończonym ruchem)
                 if (homingState.movementInProgress && stepperX.distanceToGo() == 0 && !cncState.limitXOn) {
+                    stepperX.stop();
+                    stepperY.stop();
+                    stepperX.setCurrentPosition(stepperX.currentPosition());
+                    stepperY.setCurrentPosition(stepperY.currentPosition());
                     homingState.stage = HomingState::HomingStage::ERROR;
                     homingState.errorMessage = "X limit switch not reached - check wiring";
                     return;
@@ -1549,6 +1568,10 @@ void processHoming(MachineState& cncState, HomingState& homingState, MultiSteppe
 
                 // Sprawdź timeout (zabezpieczenie przed nieskończonym ruchem)
                 if (homingState.movementInProgress && stepperY.distanceToGo() == 0 && !cncState.limitYOn) {
+                    stepperX.stop();
+                    stepperY.stop();
+                    stepperX.setCurrentPosition(stepperX.currentPosition());
+                    stepperY.setCurrentPosition(stepperY.currentPosition());
                     homingState.stage = HomingState::HomingStage::ERROR;
                     homingState.errorMessage = "Y limit switch not reached - check wiring";
                     return;

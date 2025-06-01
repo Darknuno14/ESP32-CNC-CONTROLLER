@@ -3,8 +3,8 @@
 
 // ============================================================================
 // Enable debugging:
-//#define DEBUG
-//#define DEBUG_CONTROL_TASK
+#define DEBUG
+#define DEBUG_CONTROL_TASK
 //#define DEBUG_CNC_TASK
 //#define DEBUG_SERVER_ROUTES
 //#define DEBUG_SD
@@ -48,8 +48,8 @@ namespace CONFIG {
     constexpr uint32_t CNCTASK_STACK_SIZE { 6144 }; // [bytes]
 
     // Priorytety zadań FreeRTOS
-    constexpr uint8_t CONTROLTASK_PRIORITY { 1 }; // The priority at which the task should run
-    constexpr uint8_t CNCTASK_PRIORITY { 2 };
+    constexpr uint8_t CONTROLTASK_PRIORITY { 2 }; // The priority at which the task should run
+    constexpr uint8_t CNCTASK_PRIORITY { 1 };
 
     // Pomocnicze do przypisania zadań do rdzeni ESP32
     constexpr BaseType_t CORE_0 { 0 };
