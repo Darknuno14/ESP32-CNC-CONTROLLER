@@ -376,10 +376,49 @@ void taskCNC(void* parameter) {
                             #endif
                             break;
 
-                        case CommandType::JOG:
-                            // Przejście do trybu ruchu ręcznego
-                            cncState.state = CNCState::JOG;
+                        case CommandType::JOG: {
+                            // Bezpośrednie wykonanie ruchu JOG bez zmiany stanu
+                            float xOffset = commandData.param1;
+                            float yOffset = commandData.param2;
+                            float speedMode = commandData.param3; // 0.0 = praca, 1.0 = szybki
+
+                            #ifdef DEBUG_CNC_TASK
+                            Serial.printf("DEBUG JOG: X=%.2f, Y=%.2f, SpeedMode=%.1f\n",
+                                xOffset, yOffset, speedMode);
+                            #endif
+
+                            // Sprawdzenie czy ruch jest możliwy (nie zero)
+                            if (abs(xOffset) > 0.001f || abs(yOffset) > 0.001f) {
+                                // Przejście do stanu JOG i zaplanowanie ruchu
+                                cncState.state = CNCState::JOG;
+
+                                // Wybór profilu prędkości na podstawie trybu
+                                bool useRapid = (speedMode > 0.5f);
+                                updateMotorSpeed('X', useRapid, multiStepper, stepperX, stepperY, config);
+                                updateMotorSpeed('Y', useRapid, multiStepper, stepperX, stepperY, config);
+
+                                // Konwersja przesunięć z mm na kroki
+                                long stepsX = static_cast<long>(xOffset * config.X.stepsPerMM);
+                                long stepsY = static_cast<long>(yOffset * config.Y.stepsPerMM);
+
+                                // Przygotowanie synchronizowanego ruchu obu osi
+                                long positions[2];
+                                positions[0] = stepperX.currentPosition() + stepsX;
+                                positions[1] = stepperY.currentPosition() + stepsY;
+
+                                multiStepper.moveTo(positions);
+
+                                // Aktualizacja logicznej pozycji w układzie współrzędnych
+                                cncState.currentX += xOffset;
+                                cncState.currentY += yOffset;
+
+                                #ifdef DEBUG_CNC_TASK
+                                Serial.printf("DEBUG JOG: Zaplanowano ruch do pozycji X=%.2f, Y=%.2f\n",
+                                    cncState.currentX, cncState.currentY);
+                                #endif
+                            }
                             break;
+                        }
 
                         case CommandType::ZERO:
                             // Ustawienie aktualnej pozycji jako punkt zerowy
@@ -452,20 +491,35 @@ void taskCNC(void* parameter) {
                 break;
 
             case CNCState::JOG:
-                // Obsługa ruchu ręcznego (precyzyjnego pozycjonowania)
-                if (commandPending) {
+                // Stan ruchu ręcznego - sprawdzanie zakończenia ruchu
+                // Aktualizacja pozycji na podstawie rzeczywistego położenia silników
+                cncState.currentX = stepperX.currentPosition() / config.X.stepsPerMM;
+                cncState.currentY = stepperY.currentPosition() / config.Y.stepsPerMM;
+
+                // Sprawdzenie czy ruch się zakończył
+                if (stepperX.distanceToGo() == 0 && stepperY.distanceToGo() == 0) {
+                    cncState.state = CNCState::IDLE;
+                    #ifdef DEBUG_CNC_TASK
+                    Serial.printf("DEBUG JOG: Ruch zakończony, powrót do IDLE. Pozycja: X=%.2f, Y=%.2f\n",
+                        cncState.currentX, cncState.currentY);
+                    #endif
+                }
+
+                // Obsługa dodatkowych komend JOG podczas ruchu
+                if (commandPending && commandData.type == CommandType::JOG) {
                     commandPending = false;
-                    if (commandData.type == CommandType::JOG) {
-                        float xOffset = commandData.param1;
-                        float yOffset = commandData.param2;
-                        float speedMode = commandData.param3; // 0.0 = praca, 1.0 = szybki
+                    
+                    float xOffset = commandData.param1;
+                    float yOffset = commandData.param2;
+                    float speedMode = commandData.param3;
 
-                        #ifdef DEBUG_CNC_TASK
-                        Serial.printf("DEBUG JOG: X=%.2f, Y=%.2f, SpeedMode=%.1f\n",
-                            xOffset, yOffset, speedMode);
-                        #endif
+                    #ifdef DEBUG_CNC_TASK
+                    Serial.printf("DEBUG JOG: Dodatkowy ruch podczas JOG: X=%.2f, Y=%.2f\n", xOffset, yOffset);
+                    #endif
 
-                        // Wybór profilu prędkości na podstawie trybu
+                    // Sprawdzenie czy nowy ruch jest możliwy
+                    if (abs(xOffset) > 0.001f || abs(yOffset) > 0.001f) {
+                        // Wybór profilu prędkości
                         bool useRapid = (speedMode > 0.5f);
                         updateMotorSpeed('X', useRapid, multiStepper, stepperX, stepperY, config);
                         updateMotorSpeed('Y', useRapid, multiStepper, stepperX, stepperY, config);
@@ -474,22 +528,17 @@ void taskCNC(void* parameter) {
                         long stepsX = static_cast<long>(xOffset * config.X.stepsPerMM);
                         long stepsY = static_cast<long>(yOffset * config.Y.stepsPerMM);
 
-                        // Przygotowanie synchronizowanego ruchu obu osi
+                        // Dodanie do aktualnej pozycji docelowej
                         long positions[2];
                         positions[0] = stepperX.currentPosition() + stepsX;
                         positions[1] = stepperY.currentPosition() + stepsY;
 
                         multiStepper.moveTo(positions);
 
-                        // Aktualizacja logicznej pozycji w układzie współrzędnych
+                        // Aktualizacja logicznej pozycji
                         cncState.currentX += xOffset;
                         cncState.currentY += yOffset;
                     }
-                }
-
-                // Powrót do bezczynności po zakończeniu ruchu JOG
-                if (stepperX.distanceToGo() == 0 && stepperY.distanceToGo() == 0) {
-                    cncState.state = CNCState::IDLE;
                 }
                 break;
 
@@ -794,8 +843,16 @@ void updateIO(MachineState& CNCState, const MachineConfig& config) {
         CNCState.limitYOn = false;
     }
     else {
-        CNCState.limitXOn = digitalRead(PINCONFIG::LIMIT_X_PIN);
-        CNCState.limitYOn = digitalRead(PINCONFIG::LIMIT_Y_PIN);
+        // Interpretacja stanu w zależności od typu krańcówki (NO/NC)
+        if (config.limitSwitchType == 0) { 
+            // NO (Normally Open) - krańcówka aktywna gdy pin HIGH
+            CNCState.limitXOn = digitalRead(PINCONFIG::LIMIT_X_PIN) == HIGH;
+            CNCState.limitYOn = digitalRead(PINCONFIG::LIMIT_Y_PIN) == HIGH;
+        } else { 
+            // NC (Normally Closed) - krańcówka aktywna gdy pin LOW
+            CNCState.limitXOn = digitalRead(PINCONFIG::LIMIT_X_PIN) == LOW;
+            CNCState.limitYOn = digitalRead(PINCONFIG::LIMIT_Y_PIN) == LOW;
+        }
     }
 
     // Odczyt przycisku ESTOP (z możliwością programowego wyłączenia)

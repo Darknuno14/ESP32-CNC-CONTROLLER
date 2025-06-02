@@ -318,7 +318,7 @@ void WebServerManager::setupConfigRoutes() {
     // Aktualizacja całej konfiguracji
     server->on("/api/config", HTTP_POST,
         [](AsyncWebServerRequest* request) {
-            request->send(200, "text/plain", "Processing POST request...");
+            // Don't send any response here - let the body handler do it
         },
         NULL,
         [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
@@ -375,9 +375,7 @@ void WebServerManager::setupConfigRoutes() {
 void WebServerManager::setupJogRoutes() {
     // Sterowanie ruchem ręcznym (JOG) z kontrolą prędkości
     server->on("/api/jog", HTTP_POST,
-        [](AsyncWebServerRequest* request) {
-            request->send(200, "text/plain", "Processing JOG request...");
-        },
+        [](AsyncWebServerRequest* request) {},
         NULL,
         [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
             processJsonRequest(request, data, len, index, total, 512, [this, request](const String& jsonStr) {
@@ -423,9 +421,7 @@ void WebServerManager::setupJogRoutes() {
 
     // Endpoint kontroli drutu grzejnego - włączanie/wyłączanie
     server->on("/api/wire", HTTP_POST,
-        [](AsyncWebServerRequest* request) {
-            request->send(200, "text/plain", "Processing wire request...");
-        },
+        [](AsyncWebServerRequest* request) {},
         NULL,
         [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
             processJsonRequest(request, data, len, index, total, 256, [this, request](const String& jsonStr) {
@@ -464,9 +460,7 @@ void WebServerManager::setupJogRoutes() {
 
     // Endpoint kontroli wentylatora - włączanie/wyłączanie
     server->on("/api/fan", HTTP_POST,
-        [](AsyncWebServerRequest* request) {
-            request->send(200, "text/plain", "Processing fan request...");
-        },
+        [](AsyncWebServerRequest* request) {},
         NULL,
         [this](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
             processJsonRequest(request, data, len, index, total, 256, [this, request](const String& jsonStr) {
