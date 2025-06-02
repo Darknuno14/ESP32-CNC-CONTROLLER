@@ -6,5 +6,6 @@
 include/credentials.h
 include/CREDENTIALS.H
 ESP32-CNC-CONTROLLER.code-workspace
+magisterka.md
 
 
